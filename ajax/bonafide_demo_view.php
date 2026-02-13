@@ -247,7 +247,7 @@ if ($type === 'General') {
     </div>
 
     <div class="ref-container">
-        <div class="ref-number">Ref: VTHT/e-Bona/<?= current_academic_year() ?>/DEMO</div>
+        <div class="ref-number">Ref/VH/BONA/<?= current_academic_year() ?>/001</div>
         <div class="certificate-date">Date: Not Approved</div>
     </div>
 

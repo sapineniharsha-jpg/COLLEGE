@@ -521,7 +521,7 @@ function generate_reference_number($mysqli) {
     $res = $mysqli->query("SELECT id FROM bonafide_certificates ORDER BY id DESC LIMIT 1");
     $last_id = $res && $res->num_rows > 0 ? (int) $res->fetch_assoc()['id'] : 0;
     $next = $last_id + 1;
-    return "VTHT/e-Bona/{$acad}/" . str_pad($next, 4, '0', STR_PAD_LEFT);
+    return "Ref/VH/BONA/{$acad}/" . str_pad($next, 3, '0', STR_PAD_LEFT);
 }
 
 // ========================= STUDENT PROFILE =========================
@@ -1877,7 +1877,7 @@ if ($is_admin || $is_staff || $is_hod || $is_dean) {
                         </div>
 
                         <div class="ref-container">
-                            <div class="ref-number" id="preview_ref">Ref: VTHT/e-Bona/<?= current_academic_year() ?>/DEMO</div>
+                            <div class="ref-number" id="preview_ref">Ref/VH/BONA/<?= current_academic_year() ?>/001</div>
                             <div class="certificate-date">Date: Not Approved</div>
                         </div>
 
