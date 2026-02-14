@@ -44,6 +44,11 @@ $security_path = __DIR__ . '/../platform_security.php';
 if (file_exists($security_path)) {
     require_once $security_path;
 }
+if (!function_exists('vh_e')) {
+    function vh_e($value) {
+        return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+    }
+}
 
 // Auth Check
 if (!isset($_SESSION['user_id'])) {
