@@ -32,6 +32,8 @@ if (!function_exists('vh_normalize_role_local')) {
             'administrative officer' => 'ao',
             'administrative_officer' => 'ao',
             'counselor' => 'counsellor',
+            'class advisor' => 'class_advisor',
+            'classadvisor' => 'class_advisor',
         ];
         return $map[$role] ?? $role;
     }
@@ -42,6 +44,55 @@ if (!function_exists('vh_is_active_nav')) {
         $itemPath = parse_url($itemPath, PHP_URL_PATH) ?: $itemPath;
         $itemBase = basename($itemPath);
         return ($itemPath === $currentUriPath) || ($itemBase !== '' && $itemBase === $currentPage);
+    }
+}
+if (!function_exists('vh_resolve_nav_path')) {
+    function vh_resolve_nav_path(string $path): string
+    {
+        $parts = parse_url($path);
+        $rawPath = $parts['path'] ?? $path;
+        $query = isset($parts['query']) ? '?' . $parts['query'] : '';
+
+        $candidates = [$rawPath];
+        switch ($rawPath) {
+            case '/dashboard/dashboard.php':
+                $candidates = ['/dashboard/dashboard.php', '/dashboard.php'];
+                break;
+            case '/profile.php':
+                $candidates = ['/profile.php', '/dashboard/profile.php'];
+                break;
+            case '/attendance_selection.php':
+                $candidates = ['/attendance_selection.php', '/dashboard/attendance.php'];
+                break;
+            case '/mentor_hub.php':
+                $candidates = ['/mentor_hub.php', '/dashboard/mentor_hub.php'];
+                break;
+            case '/class_advisor_manager.php':
+                $candidates = ['/class_advisor_manager.php', '/dashboard/class_advisor_manager.php'];
+                break;
+            case '/bonafide.php':
+                $candidates = ['/bonafide.php', '/bonafide/bonafide.php'];
+                break;
+            case '/admin/view_circular.php':
+                $candidates = ['/admin/view_circular.php', '/admin/circulars.php'];
+                break;
+            case '/logout.php':
+                $candidates = ['/logout.php', '/dashboard/logout.php', '/bonafide/logout.php'];
+                break;
+            case '/forgot_password.php':
+                $candidates = ['/forgot_password.php', '/auth/forgot_password.php'];
+                break;
+        }
+
+        $docRoot = rtrim((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''), '/');
+        if ($docRoot !== '') {
+            foreach ($candidates as $candidate) {
+                if (file_exists($docRoot . $candidate)) {
+                    return $candidate . $query;
+                }
+            }
+        }
+        return $candidates[0] . $query;
     }
 }
 
@@ -64,6 +115,16 @@ $role_pages = function_exists('vh_pages_for_role') ? vh_pages_for_role($user_rol
 if (empty($role_pages)) {
     $role_pages = $default_pages;
 }
+$resolved_role_pages = [];
+foreach ($role_pages as $pageItem) {
+    $itemPath = (string) ($pageItem['path'] ?? '#');
+    if ($itemPath !== '' && $itemPath !== '#') {
+        $pageItem['path'] = vh_resolve_nav_path($itemPath);
+    }
+    $resolved_role_pages[] = $pageItem;
+}
+$role_pages = $resolved_role_pages;
+
 $sitemap_pages = array_slice($role_pages, 0, 8);
 $mobile_pages = array_slice($role_pages, 0, 4);
 if (count($mobile_pages) < 4) {
@@ -73,6 +134,7 @@ if (count($mobile_pages) < 4) {
         ['label' => 'Logout', 'path' => '/logout.php', 'icon' => 'fas fa-sign-out-alt'],
     ];
     foreach ($extras as $extra) {
+        $extra['path'] = vh_resolve_nav_path((string) ($extra['path'] ?? '#'));
         $exists = false;
         foreach ($mobile_pages as $item) {
             if (($item['path'] ?? '') === $extra['path']) {
