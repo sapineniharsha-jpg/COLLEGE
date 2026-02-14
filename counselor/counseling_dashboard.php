@@ -79,13 +79,20 @@ $role = strtolower($_SESSION['role'] ?? '');
 $user_dept = $_SESSION['DEPARTMENT'] ?? '';
 
 // Access Control
-$allowed_roles = ['admin', 'principal', 'dean', 'hod', 'counsellor', 'faculty'];
+$allowed_roles = ['admin', 'principal', 'counsellor', 'counselor'];
 if (!in_array($role, $allowed_roles, true)) {
-    die("<div style='text-align:center; padding:50px; font-family:sans-serif;'>Access Denied.</div>");
+    if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
+        http_response_code(404);
+        header('Content-Type: application/json');
+        echo json_encode(['error' => 'Not Found']);
+        exit;
+    }
+    http_response_code(404);
+    die("<div style='text-align:center; padding:50px; font-family:sans-serif;'>404 Not Found</div>");
 }
 
-$can_edit = in_array($role, ['counsellor', 'admin', 'faculty'], true);
-$is_super = in_array($role, ['admin', 'principal', 'dean'], true);
+$can_edit = in_array($role, ['counsellor', 'counselor', 'admin', 'principal'], true);
+$is_super = in_array($role, ['admin', 'principal'], true);
 $is_admin = ($role === 'admin'); // Specific check for Delete feature
 $csrf_token = function_exists('vh_get_csrf_token') ? vh_get_csrf_token() : '';
 
