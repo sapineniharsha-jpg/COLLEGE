@@ -36,6 +36,42 @@ if (!isset($mysqli)) {
     die(json_encode(['status' => 'error', 'message' => 'DB Connection Failed']));
 }
 
+// Role-based access gate
+if (!isset($_SESSION['user_id']) && !isset($_SESSION['ID_NO'])) {
+    if (isset($_POST['action'])) {
+        header('Content-Type: application/json');
+        http_response_code(401);
+        echo json_encode(['status' => 'error', 'message' => 'Session Expired']);
+        exit;
+    }
+    header('Location: /login.php');
+    exit();
+}
+
+if (!function_exists('attendance_forbidden_exit')) {
+    function attendance_forbidden_exit($as_json = false) {
+        if ($as_json) {
+            if (!headers_sent()) {
+                http_response_code(404);
+                header('Content-Type: application/json');
+            }
+            echo json_encode(['status' => 'error', 'message' => 'Not Found']);
+        } else {
+            if (!headers_sent()) {
+                http_response_code(404);
+            }
+            echo '404 Not Found';
+        }
+        exit();
+    }
+}
+
+$__attendance_role = strtoupper(trim((string) ($_SESSION['role'] ?? 'USER')));
+$__attendance_allowed_roles = ['ADMIN', 'PRINCIPAL', 'DEAN', 'DEAN_ACADEMICS', 'HOD', 'FACULTY', 'STUDENT', 'VC'];
+if (!in_array($__attendance_role, $__attendance_allowed_roles, true)) {
+    attendance_forbidden_exit(isset($_POST['action']));
+}
+
 // HOD department fix
 if (strtoupper($_SESSION['role'] ?? '') === 'HOD' && empty($_SESSION['DEPARTMENT'])) {
     $fid = $_SESSION['ID_NO'] ?? $_SESSION['user_id'] ?? '';

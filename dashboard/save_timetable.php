@@ -56,6 +56,10 @@ try {
         throw new Exception('Database connection failure.');
     }
 
+    if (!isset($_SESSION['user_id']) && !isset($_SESSION['ID_NO'])) {
+        throw new Exception('Session Expired.');
+    }
+
     if (function_exists('vh_require_csrf_or_exit')) {
         vh_require_csrf_or_exit(true);
     }

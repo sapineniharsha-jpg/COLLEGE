@@ -57,6 +57,19 @@ if (!isset($mysqli) || !($mysqli instanceof mysqli) || $mysqli->connect_error) {
     die(json_encode(['status' => 'error', 'message' => 'Database connection failure']));
 }
 
+if (!isset($_SESSION['user_id']) && !isset($_SESSION['ID_NO'])) {
+    if (isset($_POST['delete_id'])) {
+        if (!headers_sent()) {
+            header('Content-Type: application/json');
+            http_response_code(401);
+        }
+        echo json_encode(['status' => 'error', 'message' => 'Session Expired']);
+        exit;
+    }
+    header('Location: /login.php');
+    exit();
+}
+
 $csrf_token = function_exists('vh_get_csrf_token') ? vh_get_csrf_token() : '';
 $self_page = basename(__FILE__);
 

@@ -51,6 +51,18 @@ if (!function_exists('vh_e')) {
     }
 }
 
+// Auth + role gate
+if (!isset($_SESSION['user_id'])) {
+    header('Location: /login.php');
+    exit();
+}
+$page_role = strtolower(trim((string) ($_SESSION['role'] ?? '')));
+$page_allowed_roles = ['admin', 'principal', 'dean', 'dean_academics'];
+if (!in_array($page_role, $page_allowed_roles, true)) {
+    http_response_code(404);
+    die('404 Not Found');
+}
+
 // ROBUST LOOKUP
 $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 $circular_no = trim((string) ($_GET['circular_no'] ?? $_GET['ref_no'] ?? ''));

@@ -46,6 +46,19 @@ if (file_exists($security_path)) {
     require_once $security_path;
 }
 
+// Role-based access gate
+if (!isset($_SESSION['user_id']) && !isset($_SESSION['ID_NO'])) {
+    header('Location: /login.php');
+    exit();
+}
+$user_role = strtoupper(trim((string) ($_SESSION['role'] ?? 'USER')));
+$allowed_roles = ['ADMIN', 'PRINCIPAL', 'DEAN', 'DEAN_ACADEMICS', 'HOD', 'FACULTY', 'STUDENT', 'VC'];
+if (!in_array($user_role, $allowed_roles, true)) {
+    http_response_code(404);
+    echo '404 Not Found';
+    exit();
+}
+
 /* ======================================================
    1. VALIDATE INPUT & SECURITY
 ====================================================== */

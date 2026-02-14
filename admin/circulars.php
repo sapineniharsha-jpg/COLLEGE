@@ -56,6 +56,12 @@ if (!isset($_SESSION['user_id'])) {
     header('Location: /login.php');
     exit();
 }
+$role = strtolower(trim((string) ($_SESSION['role'] ?? '')));
+$allowed_roles = ['admin', 'principal', 'dean', 'dean_academics'];
+if (!in_array($role, $allowed_roles, true)) {
+    http_response_code(404);
+    die('404 Not Found');
+}
 
 $success_msg = "";
 $error_msg = "";
