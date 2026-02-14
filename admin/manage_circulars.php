@@ -7,14 +7,16 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 $include_paths = [__DIR__ . '/..', dirname(__DIR__)];
-function find_include_path(array $paths, $relative) {
-    foreach ($paths as $base) {
-        $full = rtrim($base, '/') . '/' . ltrim($relative, '/');
-        if (file_exists($full)) {
-            return $full;
+if (!function_exists('find_include_path')) {
+    function find_include_path(array $paths, $relative) {
+        foreach ($paths as $base) {
+            $full = rtrim($base, '/') . '/' . ltrim($relative, '/');
+            if (file_exists($full)) {
+                return $full;
+            }
         }
+        return null;
     }
-    return null;
 }
 
 $db_path = find_include_path($include_paths, 'includes/db.php');
