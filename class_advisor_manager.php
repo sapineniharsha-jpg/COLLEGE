@@ -17,6 +17,11 @@ function find_include_path(array $paths, $relative) {
     return null;
 }
 
+$security_path = __DIR__ . '/platform_security.php';
+if (file_exists($security_path)) {
+    require_once $security_path;
+}
+
 $db_path = find_include_path($include_paths, 'includes/db.php');
 if (!$db_path) {
     http_response_code(500);
@@ -89,9 +94,13 @@ $batch_col = pick_column($columns_meta, ['batch', 'Batch']);
 $is_sh_hod = ($role === 'hod' && is_science_humanities_dept($user_dept));
 $message = '';
 $message_type = 'success';
+$csrf_token = function_exists('vh_get_csrf_token') ? vh_get_csrf_token() : '';
 
 // Handle update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_assignment'])) {
+    if (function_exists('vh_require_csrf_or_exit')) {
+        vh_require_csrf_or_exit(false);
+    }
     if ($class_advisor_col === '') {
         $message = 'Class advisor column not found in mentor_mentee.';
         $message_type = 'danger';
@@ -521,6 +530,7 @@ if ($header_path) include $header_path;
                         <td>
                             <form method="POST" class="d-flex gap-2 align-items-center">
                                 <input type="hidden" name="update_assignment" value="1">
+                                <input type="hidden" name="_csrf" value="<?= vh_e($csrf_token) ?>">
                                 <input type="hidden" name="student_id" value="<?= htmlspecialchars($stu['student_id']) ?>">
                                 <input type="hidden" name="student_type" value="<?= htmlspecialchars($stu['type']) ?>">
                                 <select name="class_advisor_id" class="select" required>

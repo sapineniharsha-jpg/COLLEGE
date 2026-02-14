@@ -3,6 +3,10 @@ ob_start();
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+$security_path = dirname(__DIR__) . '/platform_security.php';
+if (file_exists($security_path)) {
+    require_once $security_path;
+}
 $include_paths = [dirname(dirname(__DIR__)), dirname(__DIR__)];
 function find_include_path(array $paths, $relative) {
     foreach ($paths as $base) {
@@ -430,7 +434,7 @@ if ($is_print):
     </div>
 
     <div class="ref-container">
-        <div class="ref-number">Ref: <?= htmlspecialchars($cert['ref_number']) ?></div>
+        <div class="ref-number"><?= htmlspecialchars($cert['ref_number']) ?></div>
         <div class="certificate-date">Date: <?= date('d M Y', strtotime($cert['bonafide_date'])) ?></div>
     </div>
 

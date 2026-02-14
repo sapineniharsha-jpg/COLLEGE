@@ -20,6 +20,11 @@ function find_include_path(array $paths, $relative) {
     return null;
 }
 
+$security_path = __DIR__ . '/platform_security.php';
+if (file_exists($security_path)) {
+    require_once $security_path;
+}
+
 $db_path = find_include_path($include_paths, 'includes/db.php');
 if (!$db_path) {
     header('Content-Type: application/json');
@@ -29,6 +34,42 @@ require_once $db_path;
 if (!isset($mysqli)) {
     header('Content-Type: application/json');
     die(json_encode(['status' => 'error', 'message' => 'DB Connection Failed']));
+}
+
+// Role-based access gate
+if (!isset($_SESSION['user_id']) && !isset($_SESSION['ID_NO'])) {
+    if (isset($_POST['action'])) {
+        header('Content-Type: application/json');
+        http_response_code(401);
+        echo json_encode(['status' => 'error', 'message' => 'Session Expired']);
+        exit;
+    }
+    header('Location: /login.php');
+    exit();
+}
+
+if (!function_exists('attendance_forbidden_exit')) {
+    function attendance_forbidden_exit($as_json = false) {
+        if ($as_json) {
+            if (!headers_sent()) {
+                http_response_code(404);
+                header('Content-Type: application/json');
+            }
+            echo json_encode(['status' => 'error', 'message' => 'Not Found']);
+        } else {
+            if (!headers_sent()) {
+                http_response_code(404);
+            }
+            echo '404 Not Found';
+        }
+        exit();
+    }
+}
+
+$__attendance_role = strtoupper(trim((string) ($_SESSION['role'] ?? 'USER')));
+$__attendance_allowed_roles = ['ADMIN', 'PRINCIPAL', 'DEAN', 'DEAN_ACADEMICS', 'HOD', 'FACULTY', 'STUDENT', 'VC'];
+if (!in_array($__attendance_role, $__attendance_allowed_roles, true)) {
+    attendance_forbidden_exit(isset($_POST['action']));
 }
 
 // HOD department fix
@@ -124,6 +165,9 @@ if (!function_exists('faculty_in_dept')) {
 if (isset($_POST['action'])) {
     if (ob_get_length()) ob_clean();
     header('Content-Type: application/json');
+    if (function_exists('vh_require_csrf_or_exit')) {
+        vh_require_csrf_or_exit(true);
+    }
     $action = $_POST['action'];
 
     try {
@@ -457,8 +501,8 @@ if (isset($_POST['action'])) {
             }
 
             $stmt = $mysqli->prepare($sql);
-            $stmt->bind_param("s", $fid);
             if(!$stmt) throw new Exception($mysqli->error);
+            $stmt->bind_param("s", $fid);
             $stmt->execute();
             $res = $stmt->get_result();
             $data = [];
@@ -512,6 +556,7 @@ $is_hod = is_hod_user();
 $user_id = $_SESSION['ID_NO'] ?? $_SESSION['user_id'];
 $stud_summary = [];
 $faculty_list = [];
+$csrf_token = function_exists('vh_get_csrf_token') ? vh_get_csrf_token() : '';
 
 if ($is_admin || $is_hod) {
     if ($is_hod) {
@@ -728,7 +773,12 @@ include '../includes/header.php';
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 <script>
 const API = window.location.pathname.split('?')[0];
+const CSRF_TOKEN = <?= json_encode($csrf_token) ?>;
 $('#loader').hide();
+
+function withCsrf(payload) {
+    return { ...payload, _csrf: CSRF_TOKEN };
+}
 
 function showToast(msg, type='success') {
     let col = type==='error'?'var(--danger)':'var(--success)';
@@ -750,7 +800,7 @@ function getTargetFaculty() {
 }
 
 function setDayOrder() {
-    $.post(API, { action:'set_day_order', date:$('#adminDate').val(), day_order:$('#adminDay').val() }, function(res) {
+    $.post(API, withCsrf({ action:'set_day_order', date:$('#adminDate').val(), day_order:$('#adminDay').val() }), function(res) {
         if (res.status === 'success') {
             showToast(res.message);
             checkAdminDayOrder();
@@ -763,7 +813,7 @@ function setDayOrder() {
 }
 function deleteDayOrder() {
     if(!confirm('Delete day order for selected date?')) return;
-    $.post(API, { action:'delete_day_order', date:$('#adminDate').val() }, function(res) {
+    $.post(API, withCsrf({ action:'delete_day_order', date:$('#adminDate').val() }), function(res) {
         if (res.status === 'success') {
             showToast(res.message);
             checkAdminDayOrder();
@@ -775,7 +825,7 @@ function deleteDayOrder() {
     });
 }
 function checkAdminDayOrder() {
-    $.post(API, { action:'check_day_order', date:$('#attDate').val() }, function(res) {
+    $.post(API, withCsrf({ action:'check_day_order', date:$('#attDate').val() }), function(res) {
         if(res.status==='success' && res.locked) {
             $('#dayOrder').val(res.day_order).prop('disabled',true);
             $('#adminDayMsg').html(`<i class="fas fa-lock"></i> Official Day Order: ${res.day_order}`).slideDown();
@@ -797,7 +847,7 @@ function loadSchedule() {
     let d = $('#attDate').val(); let o = $('#dayOrder').val();
     if(!o) return showToast("Select Day Order", "error");
     $('#loader').show();
-    $.post(API, { action:'get_schedule', date:d, day_order:o, target_fid: getTargetFaculty() }, function(res) {
+    $.post(API, withCsrf({ action:'get_schedule', date:d, day_order:o, target_fid: getTargetFaculty() }), function(res) {
         $('#loader').hide();
         if(res.status !== 'success') {
             showToast(res.message || 'Unable to load schedule', 'error');
@@ -830,7 +880,7 @@ function openAtt(uc, sc, sn, hr, locked) {
     currClass = { unique_code:uc, subject_code:sc, hour:hr };
     $('#attTitle').text(sn); $('#attClassDetails').text(`${sc} | Hour ${hr}`);
     $('#loader').show();
-    $.post(API, { action:'get_students', unique_code:uc }, function(res) {
+    $.post(API, withCsrf({ action:'get_students', unique_code:uc }), function(res) {
         $('#loader').hide();
         let h = '';
         res.data.forEach(s => {
@@ -875,7 +925,7 @@ function saveAtt() {
     });
     $('#loader').show();
 
-    $.post(API, { action:'save_attendance', ...currClass, date:$('#attDate').val(), day_order:$('#dayOrder').val(), students:JSON.stringify(students), target_fid: getTargetFaculty() }, function(res) {
+    $.post(API, withCsrf({ action:'save_attendance', ...currClass, date:$('#attDate').val(), day_order:$('#dayOrder').val(), students:JSON.stringify(students), target_fid: getTargetFaculty() }), function(res) {
         $('#loader').hide();
         if(res.status==='success') {
             showToast(res.message);
@@ -893,7 +943,7 @@ function filterSt() { let v = $('#searchBox').val().toLowerCase(); $('.student-i
 
 function loadHistory() {
     $('#loader').show();
-    $.post(API, { action:'get_history', target_fid: getTargetFaculty() }, function(res) {
+    $.post(API, withCsrf({ action:'get_history', target_fid: getTargetFaculty() }), function(res) {
         $('#loader').hide();
         if (res.status !== 'success') {
             showToast(res.message || 'Unable to load history', 'error');
@@ -921,7 +971,7 @@ function loadHistory() {
 }
 
 function viewHist(uc, d, h, sc) {
-    $.post(API, { action:'get_history_details', unique_code:uc, date:d, hour:h, subject_code:sc }, function(res) {
+    $.post(API, withCsrf({ action:'get_history_details', unique_code:uc, date:d, hour:h, subject_code:sc }), function(res) {
         let htm = '';
         res.data.forEach(s => {
              let c = s.status==='P'?'var(--success)':'var(--danger)';

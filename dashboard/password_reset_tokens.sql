@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS `password_reset_tokens` (
+    `id` INT(11) NOT NULL AUTO_INCREMENT,
+    `user_id` VARCHAR(50) NOT NULL,
+    `user_type` VARCHAR(20) NOT NULL,
+    `source_table` VARCHAR(80) NOT NULL,
+    `id_column` VARCHAR(80) NOT NULL,
+    `password_column` VARCHAR(80) NOT NULL,
+    `token_hash` CHAR(64) NOT NULL,
+    `expires_at` DATETIME NOT NULL,
+    `used` TINYINT(1) NOT NULL DEFAULT 0,
+    `used_at` DATETIME DEFAULT NULL,
+    `user_name` VARCHAR(150) DEFAULT NULL,
+    `user_email` VARCHAR(200) DEFAULT NULL,
+    `requested_ip` VARCHAR(64) DEFAULT NULL,
+    `requested_user_agent` VARCHAR(255) DEFAULT NULL,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_token_hash` (`token_hash`),
+    KEY `idx_expires` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

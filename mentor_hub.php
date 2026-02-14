@@ -5,6 +5,10 @@
 ini_set('display_errors', 0);
 if (session_status() === PHP_SESSION_NONE) session_start();
 require_once '../includes/db.php';
+$security_path = __DIR__ . '/platform_security.php';
+if (file_exists($security_path)) {
+    require_once $security_path;
+}
 
 // Auth Check
 if (!isset($_SESSION['user_id'])) { header('Location: /login.php'); exit(); }
@@ -33,10 +37,56 @@ function is_science_humanities_dept($department) {
     return strpos($dep, 'science') !== false && strpos($dep, 'humanities') !== false;
 }
 
+function get_student_scope_info($mysqli, $student_id) {
+    $student_id = trim((string) $student_id);
+    if ($student_id === '') {
+        return ['found' => false, 'is_fresher' => false, 'dept' => ''];
+    }
+
+    $stmt = $mysqli->prepare("SELECT department FROM students_batch_25_26 WHERE id_no = ? LIMIT 1");
+    if ($stmt) {
+        $stmt->bind_param("s", $student_id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        if ($res && $res->num_rows > 0) {
+            $row = $res->fetch_assoc();
+            return ['found' => true, 'is_fresher' => true, 'dept' => (string) ($row['department'] ?? '')];
+        }
+    }
+
+    $stmt = $mysqli->prepare("SELECT Dept FROM students_login_master WHERE IDNo = ? LIMIT 1");
+    if ($stmt) {
+        $stmt->bind_param("s", $student_id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        if ($res && $res->num_rows > 0) {
+            $row = $res->fetch_assoc();
+            return ['found' => true, 'is_fresher' => false, 'dept' => (string) ($row['Dept'] ?? '')];
+        }
+    }
+
+    return ['found' => false, 'is_fresher' => false, 'dept' => ''];
+}
+
+function can_hod_manage_student($role, $is_sh_hod, $user_dept, array $student_scope) {
+    if ($role !== 'hod') {
+        return true;
+    }
+    if (!$student_scope['found']) {
+        return false;
+    }
+    if ($is_sh_hod) {
+        // S&H HOD can operate only on first-year (fresher) records.
+        return !empty($student_scope['is_fresher']);
+    }
+    return strcasecmp((string) ($student_scope['dept'] ?? ''), (string) $user_dept) === 0;
+}
+
 $my_type = ($role === 'student') ? 'student' : 'employee';
 $is_admin_hod = in_array($role, ['admin', 'principal', 'dean', 'hod'], true);
 $can_view_directory = $is_admin_hod;
 $is_sh_hod = ($role === 'hod' && is_science_humanities_dept($user_dept));
+$csrf_token = function_exists('vh_get_csrf_token') ? vh_get_csrf_token() : '';
 
 // ---------------------------------------------------------
 // AJAX HANDLERS
@@ -150,10 +200,34 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
         // 5. BULK OPERATIONS
         if ($action == 'assign_bulk') {
             if (!$is_admin_hod) exit;
+            if (function_exists('vh_require_csrf_or_exit')) {
+                vh_require_csrf_or_exit(true);
+            }
             $fid = $mysqli->real_escape_string($_POST['fid']);
+
+            if ($role === 'hod') {
+                $stmt_fac = $mysqli->prepare("SELECT DEPARTMENT FROM employee_details1 WHERE ID_NO = ? LIMIT 1");
+                if (!$stmt_fac) {
+                    echo json_encode(['success' => false, 'error' => 'Faculty validation failed']);
+                    exit;
+                }
+                $stmt_fac->bind_param("s", $fid);
+                $stmt_fac->execute();
+                $fac_res = $stmt_fac->get_result();
+                $fac_dept = ($fac_res && $fac_res->num_rows > 0) ? (string) ($fac_res->fetch_assoc()['DEPARTMENT'] ?? '') : '';
+                if ($fac_dept === '' || strcasecmp($fac_dept, (string) $user_dept) !== 0) {
+                    echo json_encode(['success' => false, 'error' => 'HOD can assign only own department faculty']);
+                    exit;
+                }
+            }
+
             $sids = explode(',', $_POST['sids']);
             foreach ($sids as $sid) {
                 $sid = trim($sid); if(empty($sid)) continue;
+                $scope = get_student_scope_info($mysqli, $sid);
+                if (!can_hod_manage_student($role, $is_sh_hod, $user_dept, $scope)) {
+                    continue;
+                }
                 $dept=''; $batch='';
                 $q = $mysqli->query("SELECT Dept, Batch FROM students_login_master WHERE IDNo='$sid'");
                 if($q->num_rows){ $d=$q->fetch_assoc(); $dept=$d['Dept']; $batch=$d['Batch']; }
@@ -172,9 +246,24 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
 
         if ($action == 'remove_bulk') {
             if (!$is_admin_hod) exit;
+            if (function_exists('vh_require_csrf_or_exit')) {
+                vh_require_csrf_or_exit(true);
+            }
             $sids = explode(',', $_POST['sids']);
-            $sids_str = "'" . implode("','", array_map([$mysqli, 'real_escape_string'], $sids)) . "'";
-            $mysqli->query("DELETE FROM mentor_mentee WHERE Student_ID_No IN ($sids_str)");
+            $allowed_sids = [];
+            foreach ($sids as $sid) {
+                $sid = trim((string) $sid);
+                if ($sid === '') continue;
+                $scope = get_student_scope_info($mysqli, $sid);
+                if (!can_hod_manage_student($role, $is_sh_hod, $user_dept, $scope)) {
+                    continue;
+                }
+                $allowed_sids[] = $sid;
+            }
+            if (!empty($allowed_sids)) {
+                $sids_str = "'" . implode("','", array_map([$mysqli, 'real_escape_string'], $allowed_sids)) . "'";
+                $mysqli->query("DELETE FROM mentor_mentee WHERE Student_ID_No IN ($sids_str)");
+            }
             echo json_encode(['success' => true]); exit;
         }
 
@@ -602,6 +691,7 @@ include '../includes/header.php';
     let currentFacDept = '';
     let selectedStudents = new Set();
     const isAdminHOD = <?= $is_admin_hod ? 'true' : 'false' ?>;
+    const CSRF_TOKEN = <?= json_encode($csrf_token) ?>;
 
     function showToast(msg) {
         const t = document.getElementById("toast");
@@ -797,7 +887,7 @@ include '../includes/header.php';
     function confirmAdd() {
         if(selectedStudents.size === 0) return alert("Select at least one student.");
         const ids = Array.from(selectedStudents).join(',');
-        const fd = new FormData(); fd.append('fid', currentFacId); fd.append('sids', ids);
+        const fd = new FormData(); fd.append('fid', currentFacId); fd.append('sids', ids); fd.append('_csrf', CSRF_TOKEN);
 
         fetch('?ajax=1&action=assign_bulk', {method:'POST', body:fd}).then(r=>r.json()).then(res=>{
             addModal.hide();
@@ -813,7 +903,7 @@ include '../includes/header.php';
         if(!confirm(`Remove ${chks.length} mentees from this faculty?`)) return;
 
         const ids = Array.from(chks).map(c=>c.value).join(',');
-        const fd = new FormData(); fd.append('sids', ids);
+        const fd = new FormData(); fd.append('sids', ids); fd.append('_csrf', CSRF_TOKEN);
 
         fetch('?ajax=1&action=remove_bulk', {method:'POST', body:fd}).then(r=>r.json()).then(res=>{
             showToast("Mentees removed successfully.");

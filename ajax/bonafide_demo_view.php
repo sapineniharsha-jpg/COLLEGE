@@ -3,6 +3,10 @@ ob_start();
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+$security_path = dirname(__DIR__) . '/platform_security.php';
+if (file_exists($security_path)) {
+    require_once $security_path;
+}
 $include_paths = [dirname(dirname(__DIR__)), dirname(__DIR__)];
 function find_include_path(array $paths, $relative) {
     foreach ($paths as $base) {
@@ -247,7 +251,7 @@ if ($type === 'General') {
     </div>
 
     <div class="ref-container">
-        <div class="ref-number">Ref: VTHT/e-Bona/<?= current_academic_year() ?>/DEMO</div>
+        <div class="ref-number">Ref/VH/BONA/<?= current_academic_year() ?>/001</div>
         <div class="certificate-date">Date: Not Approved</div>
     </div>
 

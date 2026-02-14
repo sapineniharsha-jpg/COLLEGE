@@ -19,6 +19,11 @@ function find_include_path(array $paths, $relative) {
     return null;
 }
 
+$security_path = __DIR__ . '/platform_security.php';
+if (file_exists($security_path)) {
+    require_once $security_path;
+}
+
 $db_path = find_include_path($include_paths, 'includes/db.php');
 if (!$db_path) {
     http_response_code(500);
@@ -35,6 +40,8 @@ if (empty($my_id)) {
     header("Location: ../login.php");
     exit();
 }
+
+$csrf_token = function_exists('vh_get_csrf_token') ? vh_get_csrf_token() : '';
 
 // 2. ADMIN CHECK
 $is_admin = false;
@@ -96,6 +103,13 @@ if (isset($_GET['ajax_action'])) {
     }
 
     if ($action === 'relieve_user') {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            echo json_encode(['error' => 'Invalid method']);
+            exit;
+        }
+        if (function_exists('vh_require_csrf_or_exit')) {
+            vh_require_csrf_or_exit(true);
+        }
         $id = $_POST['id'];
         $type = $_POST['type'];
         $status = $_POST['status'];
@@ -109,18 +123,39 @@ if (isset($_GET['ajax_action'])) {
         $stmt_log->execute();
 
         if ($type === 'faculty') {
-            $mysqli->query("UPDATE employee_details1 SET is_relieved='Yes', relieved_date='$date', relieved_reason='$reason' WHERE ID_NO='$id'");
+            $stmt_relieve = $mysqli->prepare("UPDATE employee_details1 SET is_relieved='Yes', relieved_date=?, relieved_reason=? WHERE ID_NO=?");
+            if ($stmt_relieve) {
+                $stmt_relieve->bind_param("sss", $date, $reason, $id);
+                $stmt_relieve->execute();
+            }
         } else {
+            if (!in_array($type, ['student_fresh', 'student_senior'], true)) {
+                echo json_encode(['error' => 'Invalid user type']);
+                exit;
+            }
             $table = ($type === 'student_fresh') ? 'students_batch_25_26' : 'students_login_master';
             $id_col = ($type === 'student_fresh') ? 'id_no' : 'IDNo';
-            $mysqli->query("UPDATE $table SET current_status='$status' WHERE $id_col='$id'");
-            $mysqli->query("DELETE FROM transport_allocation WHERE id_no='$id'");
-            $mysqli->query("DELETE FROM hostel_boys_titans WHERE id_no='$id'");
-            $mysqli->query("DELETE FROM hostel_girls_padmavathy WHERE id_no='$id'");
+            $stmt_status = $mysqli->prepare("UPDATE {$table} SET current_status=? WHERE {$id_col}=?");
+            if ($stmt_status) {
+                $stmt_status->bind_param("ss", $status, $id);
+                $stmt_status->execute();
+            }
+
+            foreach (['transport_allocation', 'hostel_boys_titans', 'hostel_girls_padmavathy'] as $tbl) {
+                $stmt_del = $mysqli->prepare("DELETE FROM {$tbl} WHERE id_no=?");
+                if ($stmt_del) {
+                    $stmt_del->bind_param("s", $id);
+                    $stmt_del->execute();
+                }
+            }
         }
         echo json_encode(['success' => true]);
         exit;
     }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_GET['ajax_action']) && function_exists('vh_require_csrf_or_exit')) {
+    vh_require_csrf_or_exit(false);
 }
 
 // --- 5. DATA FETCHING ---
@@ -181,20 +216,38 @@ function get_student_data($mysqli, $id) {
     }
 
     // Waterfall Status Logic
-    $hb = $mysqli->query("SELECT room_no FROM hostel_boys_titans WHERE id_no = '$id'");
-    $hg = $mysqli->query("SELECT room_no FROM hostel_girls_padmavathy WHERE id_no = '$id'");
+    $hb_room = '';
+    $hg_room = '';
+    $hb_stmt = $mysqli->prepare("SELECT room_no FROM hostel_boys_titans WHERE id_no = ? LIMIT 1");
+    if ($hb_stmt) {
+        $hb_stmt->bind_param("s", $id);
+        $hb_stmt->execute();
+        $hb_res = $hb_stmt->get_result();
+        if ($hb_res && ($hb_row = $hb_res->fetch_assoc())) {
+            $hb_room = (string) ($hb_row['room_no'] ?? '');
+        }
+    }
+    $hg_stmt = $mysqli->prepare("SELECT room_no FROM hostel_girls_padmavathy WHERE id_no = ? LIMIT 1");
+    if ($hg_stmt) {
+        $hg_stmt->bind_param("s", $id);
+        $hg_stmt->execute();
+        $hg_res = $hg_stmt->get_result();
+        if ($hg_res && ($hg_row = $hg_res->fetch_assoc())) {
+            $hg_room = (string) ($hg_row['room_no'] ?? '');
+        }
+    }
 
     $res_status = "Day Scholar (Own Transport)";
     $route = "N/A";
     $point = "";
     $badge_color = "#6b7280";
 
-    if ($hb && $hb->num_rows > 0) {
-        $res_status = "Hosteller (Titans - Room " . $hb->fetch_assoc()['room_no'] . ")";
+    if ($hb_room !== '') {
+        $res_status = "Hosteller (Titans - Room " . $hb_room . ")";
         $route = "Hostel";
         $badge_color = "#7c3aed";
-    } elseif ($hg && $hg->num_rows > 0) {
-        $res_status = "Hosteller (Padmavathy - Room " . $hg->fetch_assoc()['room_no'] . ")";
+    } elseif ($hg_room !== '') {
+        $res_status = "Hosteller (Padmavathy - Room " . $hg_room . ")";
         $route = "Hostel";
         $badge_color = "#db2777";
     } else {
@@ -431,7 +484,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_profile']) && $a
         }
 
         if (!empty($board)) {
-            $mysqli->query("INSERT INTO transport_allocation (id_no, pickup_point, route_no) VALUES ('$id', '$board', '$route_in') ON DUPLICATE KEY UPDATE pickup_point='$board', route_no='$route_in'");
+            $stmt_transport = $mysqli->prepare(
+                "INSERT INTO transport_allocation (id_no, pickup_point, route_no)
+                 VALUES (?, ?, ?)
+                 ON DUPLICATE KEY UPDATE pickup_point = VALUES(pickup_point), route_no = VALUES(route_no)"
+            );
+            if ($stmt_transport) {
+                $stmt_transport->bind_param("sss", $id, $board, $route_in);
+                $stmt_transport->execute();
+            }
         }
 
         if ($p['table'] == 'students_batch_25_26') {
@@ -558,6 +619,7 @@ if ($header_path) {
         <?php endif; ?>
         <form method="POST" class="mt-3">
             <input type="hidden" name="create_faculty" value="1">
+            <input type="hidden" name="_csrf" value="<?= vh_e($csrf_token) ?>">
             <div class="form-grid">
                 <?php foreach($faculty_columns as $col): ?>
                     <?php
@@ -597,6 +659,7 @@ if ($header_path) {
 
     <form method="POST" enctype="multipart/form-data">
         <input type="hidden" name="save_profile" value="1">
+        <input type="hidden" name="_csrf" value="<?= vh_e($csrf_token) ?>">
 
         <div class="profile-card">
             <div class="cover-photo"></div>
@@ -719,6 +782,7 @@ if ($header_path) {
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+const CSRF_TOKEN = <?= json_encode($csrf_token) ?>;
 const searchInput = document.getElementById('search');
 if (searchInput) {
     searchInput.addEventListener('keyup', function() {
@@ -765,6 +829,7 @@ function confirmRelieve() {
     fd.append('status', document.getElementById('rel_status').value);
     fd.append('reason', document.getElementById('rel_reason').value);
     fd.append('date', document.getElementById('rel_date').value);
+    fd.append('_csrf', CSRF_TOKEN);
 
     fetch('profile.php?ajax_action=relieve_user', {method:'POST', body:fd}).then(r => r.json()).then(res => {
         if (res.success) { alert("User Relieved Successfully."); location.reload(); }

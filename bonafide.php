@@ -35,6 +35,11 @@ function find_include_path(array $paths, $relative) {
     return null;
 }
 
+$security_path = __DIR__ . '/platform_security.php';
+if (file_exists($security_path)) {
+    require_once $security_path;
+}
+
 $db_path = find_include_path($include_paths, 'includes/db.php');
 if (!$db_path) {
     http_response_code(500);
@@ -102,6 +107,11 @@ $is_admin = in_array($user_role, ['admin', 'principal'], true);
 $is_dean = ($user_role === 'dean');
 $is_hod = ($user_role === 'hod');
 $is_staff = ($user_role === 'staff');
+$csrf_token = function_exists('vh_get_csrf_token') ? vh_get_csrf_token() : '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && function_exists('vh_require_csrf_or_exit')) {
+    vh_require_csrf_or_exit(false);
+}
 
 function current_academic_year() {
     $year = (int) date('Y');
@@ -270,6 +280,77 @@ function session_student_identity_tokens() {
         }
     }
     return $tokens;
+}
+
+function user_can_access_bonafide_request_scope(
+    $mysqli,
+    array $request,
+    $is_admin,
+    $is_dean,
+    $is_hod,
+    $is_staff,
+    $is_student,
+    $employee_id,
+    $student_id,
+    $user_department
+) {
+    if ($is_admin || $is_dean) {
+        return true;
+    }
+
+    $req_student_id = trim((string) ($request['student_id'] ?? ''));
+    $req_register_no = trim((string) ($request['register_number'] ?? ''));
+    $req_dept = trim((string) ($request['department'] ?? ''));
+
+    if ($is_student) {
+        $tokens = session_student_identity_tokens();
+        if (empty($tokens)) {
+            return false;
+        }
+        return in_array($req_student_id, $tokens, true) || in_array($req_register_no, $tokens, true);
+    }
+
+    if ($is_staff) {
+        if ($req_student_id === '') {
+            return false;
+        }
+        $stmt = $mysqli->prepare(
+            "SELECT 1
+             FROM mentor_mentee
+             WHERE Student_ID_No = ?
+               AND (Employee_ID_No = ? OR ClassAdvisorID = ?)
+             LIMIT 1"
+        );
+        if (!$stmt) {
+            return false;
+        }
+        $stmt->bind_param("sss", $req_student_id, $employee_id, $employee_id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        return $res && $res->num_rows > 0;
+    }
+
+    if ($is_hod) {
+        if ($user_department === '') {
+            return false;
+        }
+        if ($req_dept !== '' && strcasecmp($req_dept, $user_department) === 0) {
+            return true;
+        }
+        if (is_science_humanities_dept($user_department) && $req_student_id !== '') {
+            $stmt = $mysqli->prepare("SELECT 1 FROM students_batch_25_26 WHERE id_no = ? LIMIT 1");
+            if (!$stmt) {
+                return false;
+            }
+            $stmt->bind_param("s", $req_student_id);
+            $stmt->execute();
+            $res = $stmt->get_result();
+            return $res && $res->num_rows > 0;
+        }
+        return false;
+    }
+
+    return false;
 }
 
 function facility_display_for_request($mysqli, $request) {
@@ -521,7 +602,7 @@ function generate_reference_number($mysqli) {
     $res = $mysqli->query("SELECT id FROM bonafide_certificates ORDER BY id DESC LIMIT 1");
     $last_id = $res && $res->num_rows > 0 ? (int) $res->fetch_assoc()['id'] : 0;
     $next = $last_id + 1;
-    return "VTHT/e-Bona/{$acad}/" . str_pad($next, 4, '0', STR_PAD_LEFT);
+    return "Ref/VH/BONA/{$acad}/" . str_pad($next, 3, '0', STR_PAD_LEFT);
 }
 
 // ========================= STUDENT PROFILE =========================
@@ -791,6 +872,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_action'], $_P
     $req_stmt->execute();
     $req_res = $req_stmt->get_result();
     $request = $req_res && $req_res->num_rows > 0 ? $req_res->fetch_assoc() : null;
+    if ($request && !user_can_access_bonafide_request_scope(
+        $mysqli,
+        $request,
+        $is_admin,
+        $is_dean,
+        $is_hod,
+        $is_staff,
+        $is_student,
+        $employee_id,
+        $student_id,
+        $user_department
+    )) {
+        $request = null;
+    }
 
     if ($request && $action === 'save_fees' && $is_admin) {
         $tuition_fee = (float) ($_POST['tuition_fee'] ?? 0);
@@ -1607,6 +1702,7 @@ if ($is_admin || $is_staff || $is_hod || $is_dean) {
                     </div>
 
                     <form method="POST" class="row g-3">
+                        <input type="hidden" name="_csrf" value="<?= vh_e($csrf_token) ?>">
                         <input type="hidden" name="student_id" value="<?= htmlspecialchars($student_id) ?>">
                         <input type="hidden" name="table_source" value="<?= htmlspecialchars($table_source) ?>">
 
@@ -1740,6 +1836,7 @@ if ($is_admin || $is_staff || $is_hod || $is_dean) {
                     </div>
 
                     <form method="POST" id="requestForm">
+                        <input type="hidden" name="_csrf" value="<?= vh_e($csrf_token) ?>">
                         <div class="mb-3">
                             <label class="form-label fw-bold">Type of Certificate *</label>
                             <select name="cert_type" id="cert_type" class="form-select" required onchange="updatePreview();">
@@ -1877,7 +1974,7 @@ if ($is_admin || $is_staff || $is_hod || $is_dean) {
                         </div>
 
                         <div class="ref-container">
-                            <div class="ref-number" id="preview_ref">Ref: VTHT/e-Bona/<?= current_academic_year() ?>/DEMO</div>
+                            <div class="ref-number" id="preview_ref">Ref/VH/BONA/<?= current_academic_year() ?>/001</div>
                             <div class="certificate-date">Date: Not Approved</div>
                         </div>
 
@@ -2279,6 +2376,7 @@ if ($is_admin || $is_staff || $is_hod || $is_dean) {
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <form method="POST" id="approveFeeForm">
+                    <input type="hidden" name="_csrf" value="<?= vh_e($csrf_token) ?>">
                     <div class="modal-body">
                         <input type="hidden" name="request_action" id="approve_action_type" value="approve">
                         <input type="hidden" name="request_id" id="approve_request_id">
@@ -2382,6 +2480,7 @@ if ($is_admin || $is_staff || $is_hod || $is_dean) {
     </div>
 
     <form method="POST" id="actionForm" class="d-none">
+        <input type="hidden" name="_csrf" value="<?= vh_e($csrf_token) ?>">
         <input type="hidden" name="request_action" id="action_type">
         <input type="hidden" name="request_id" id="action_request_id">
         <input type="hidden" name="remarks" id="action_remarks">
