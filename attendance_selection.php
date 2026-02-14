@@ -465,8 +465,8 @@ if (isset($_POST['action'])) {
             }
 
             $stmt = $mysqli->prepare($sql);
-            $stmt->bind_param("s", $fid);
             if(!$stmt) throw new Exception($mysqli->error);
+            $stmt->bind_param("s", $fid);
             $stmt->execute();
             $res = $stmt->get_result();
             $data = [];

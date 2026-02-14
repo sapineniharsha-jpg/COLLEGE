@@ -282,6 +282,77 @@ function session_student_identity_tokens() {
     return $tokens;
 }
 
+function user_can_access_bonafide_request_scope(
+    $mysqli,
+    array $request,
+    $is_admin,
+    $is_dean,
+    $is_hod,
+    $is_staff,
+    $is_student,
+    $employee_id,
+    $student_id,
+    $user_department
+) {
+    if ($is_admin || $is_dean) {
+        return true;
+    }
+
+    $req_student_id = trim((string) ($request['student_id'] ?? ''));
+    $req_register_no = trim((string) ($request['register_number'] ?? ''));
+    $req_dept = trim((string) ($request['department'] ?? ''));
+
+    if ($is_student) {
+        $tokens = session_student_identity_tokens();
+        if (empty($tokens)) {
+            return false;
+        }
+        return in_array($req_student_id, $tokens, true) || in_array($req_register_no, $tokens, true);
+    }
+
+    if ($is_staff) {
+        if ($req_student_id === '') {
+            return false;
+        }
+        $stmt = $mysqli->prepare(
+            "SELECT 1
+             FROM mentor_mentee
+             WHERE Student_ID_No = ?
+               AND (Employee_ID_No = ? OR ClassAdvisorID = ?)
+             LIMIT 1"
+        );
+        if (!$stmt) {
+            return false;
+        }
+        $stmt->bind_param("sss", $req_student_id, $employee_id, $employee_id);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        return $res && $res->num_rows > 0;
+    }
+
+    if ($is_hod) {
+        if ($user_department === '') {
+            return false;
+        }
+        if ($req_dept !== '' && strcasecmp($req_dept, $user_department) === 0) {
+            return true;
+        }
+        if (is_science_humanities_dept($user_department) && $req_student_id !== '') {
+            $stmt = $mysqli->prepare("SELECT 1 FROM students_batch_25_26 WHERE id_no = ? LIMIT 1");
+            if (!$stmt) {
+                return false;
+            }
+            $stmt->bind_param("s", $req_student_id);
+            $stmt->execute();
+            $res = $stmt->get_result();
+            return $res && $res->num_rows > 0;
+        }
+        return false;
+    }
+
+    return false;
+}
+
 function facility_display_for_request($mysqli, $request) {
     static $transport_cache = [];
     static $hostel_cache = [];
@@ -801,6 +872,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['request_action'], $_P
     $req_stmt->execute();
     $req_res = $req_stmt->get_result();
     $request = $req_res && $req_res->num_rows > 0 ? $req_res->fetch_assoc() : null;
+    if ($request && !user_can_access_bonafide_request_scope(
+        $mysqli,
+        $request,
+        $is_admin,
+        $is_dean,
+        $is_hod,
+        $is_staff,
+        $is_student,
+        $employee_id,
+        $student_id,
+        $user_department
+    )) {
+        $request = null;
+    }
 
     if ($request && $action === 'save_fees' && $is_admin) {
         $tuition_fee = (float) ($_POST['tuition_fee'] ?? 0);
