@@ -37,6 +37,7 @@ if (!function_exists('vh_normalize_role_local')) {
             'counselor' => 'counsellor',
             'class advisor' => 'class_advisor',
             'classadvisor' => 'class_advisor',
+            'advisor' => 'class_advisor',
         ];
         return $map[$role] ?? $role;
     }
@@ -70,17 +71,32 @@ if (!function_exists('vh_resolve_nav_path')) {
             case '/profile.php':
                 $candidates = ['/profile.php', '/dashboard/profile.php'];
                 break;
+            case '/dashboard/profile.php':
+                $candidates = ['/dashboard/profile.php', '/profile.php'];
+                break;
             case '/attendance_selection.php':
                 $candidates = ['/attendance_selection.php', '/dashboard/attendance.php'];
+                break;
+            case '/dashboard/attendance.php':
+                $candidates = ['/dashboard/attendance.php', '/attendance_selection.php', '/attendance.php'];
                 break;
             case '/mentor_hub.php':
                 $candidates = ['/mentor_hub.php', '/dashboard/mentor_hub.php'];
                 break;
+            case '/dashboard/mentor_hub.php':
+                $candidates = ['/dashboard/mentor_hub.php', '/mentor_hub.php'];
+                break;
             case '/class_advisor_manager.php':
                 $candidates = ['/class_advisor_manager.php', '/dashboard/class_advisor_manager.php'];
                 break;
+            case '/dashboard/class_advisor_manager.php':
+                $candidates = ['/dashboard/class_advisor_manager.php', '/class_advisor_manager.php'];
+                break;
             case '/bonafide.php':
                 $candidates = ['/bonafide.php', '/bonafide/bonafide.php'];
+                break;
+            case '/bonafide/bonafide.php':
+                $candidates = ['/bonafide/bonafide.php', '/bonafide.php'];
                 break;
             case '/admin/view_circular.php':
                 $candidates = ['/admin/view_circular.php', '/admin/circulars.php'];
@@ -88,8 +104,20 @@ if (!function_exists('vh_resolve_nav_path')) {
             case '/logout.php':
                 $candidates = ['/logout.php', '/dashboard/logout.php', '/bonafide/logout.php'];
                 break;
+            case '/dashboard/logout.php':
+                $candidates = ['/dashboard/logout.php', '/logout.php', '/bonafide/logout.php'];
+                break;
             case '/forgot_password.php':
                 $candidates = ['/forgot_password.php', '/auth/forgot_password.php'];
+                break;
+            case '/auth/forgot_password.php':
+                $candidates = ['/auth/forgot_password.php', '/forgot_password.php'];
+                break;
+            case '/velai.php':
+                $candidates = ['/velai.php', '/ai/velai.php'];
+                break;
+            case '/ai/velai.php':
+                $candidates = ['/ai/velai.php', '/velai.php'];
                 break;
         }
 
@@ -133,6 +161,7 @@ vh_include_if_exists([
 
 $default_role_pages = [
     ['label' => 'Dashboard', 'path' => '/dashboard/dashboard.php', 'icon' => 'fas fa-th-large'],
+    ['label' => 'VEL AI', 'path' => '/velai.php', 'icon' => 'fas fa-brain'],
     ['label' => 'Profile', 'path' => '/profile.php', 'icon' => 'fas fa-user'],
 ];
 $role_pages = function_exists('vh_pages_for_role') ? vh_pages_for_role($user_role) : $default_role_pages;
@@ -152,6 +181,7 @@ $role_pages = $resolved_role_pages;
 $home_url = vh_resolve_nav_path('/dashboard/dashboard.php');
 $profile_url = vh_resolve_nav_path('/profile.php');
 $logout_url = vh_resolve_nav_path('/logout.php');
+$velai_url = vh_resolve_nav_path('/velai.php');
 
 $top_nav_limit = 7;
 $top_nav_items = array_slice($role_pages, 0, $top_nav_limit);
@@ -327,6 +357,20 @@ $gtm_id = (string) (getenv('GOOGLE_TAG_MANAGER_ID') ?: ($_ENV['GOOGLE_TAG_MANAGE
         }
 
         .header-actions { display: flex; align-items: center; gap: 14px; min-width: 180px; justify-content: flex-end; }
+        .ai-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            text-decoration: none;
+            padding: 7px 12px;
+            border-radius: 999px;
+            background: var(--inst-grad);
+            color: #fff;
+            font-weight: 700;
+            font-size: 0.8rem;
+            box-shadow: 0 8px 18px rgba(188, 24, 136, 0.25);
+        }
+        .ai-pill i { font-size: 0.78rem; }
         .notif-icon {
             position: relative;
             color: #374151;
@@ -476,6 +520,9 @@ $gtm_id = (string) (getenv('GOOGLE_TAG_MANAGER_ID') ?: ($_ENV['GOOGLE_TAG_MANAGE
     </nav>
 
     <div class="header-actions">
+        <a class="ai-pill" href="<?= vh_e($velai_url) ?>" title="Open VEL AI">
+            <i class="fas fa-brain"></i> AI
+        </a>
         <a class="notif-icon" href="javascript:void(0)" aria-label="Notifications">
             <i class="far fa-bell"></i><span class="notif-dot"></span>
         </a>

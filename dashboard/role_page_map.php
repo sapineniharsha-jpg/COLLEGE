@@ -14,6 +14,7 @@ if (!function_exists('vh_normalize_role')) {
             'counselor' => 'counsellor',
             'class advisor' => 'class_advisor',
             'classadvisor' => 'class_advisor',
+            'advisor' => 'class_advisor',
         ];
         return $aliases[$r] ?? $r;
     }
@@ -25,10 +26,12 @@ if (!function_exists('vh_role_page_map')) {
         return [
             'public' => [
                 ['label' => 'Dashboard', 'path' => '/dashboard/dashboard.php', 'icon' => 'fas fa-th-large'],
+                ['label' => 'VEL AI', 'path' => '/velai.php', 'icon' => 'fas fa-brain'],
                 ['label' => 'Forgot Password', 'path' => '/forgot_password.php', 'icon' => 'fas fa-key'],
             ],
             'student' => [
                 ['label' => 'Dashboard', 'path' => '/dashboard/dashboard.php', 'icon' => 'fas fa-th-large'],
+                ['label' => 'VEL AI', 'path' => '/velai.php', 'icon' => 'fas fa-brain'],
                 ['label' => 'Attendance', 'path' => '/dashboard/attendance.php', 'icon' => 'fas fa-calendar-check'],
                 ['label' => 'Topic Coverage', 'path' => '/dashboard/topic_coverage.php', 'icon' => 'fas fa-book-open'],
                 ['label' => 'Bonafide', 'path' => '/bonafide/bonafide.php', 'icon' => 'fas fa-file-signature'],
@@ -36,6 +39,7 @@ if (!function_exists('vh_role_page_map')) {
             ],
             'faculty' => [
                 ['label' => 'Dashboard', 'path' => '/dashboard/dashboard.php', 'icon' => 'fas fa-th-large'],
+                ['label' => 'VEL AI', 'path' => '/velai.php', 'icon' => 'fas fa-brain'],
                 ['label' => 'Post Attendance', 'path' => '/dashboard/attendance.php', 'icon' => 'fas fa-edit'],
                 ['label' => 'Topic Coverage', 'path' => '/dashboard/topic_coverage.php', 'icon' => 'fas fa-book-open'],
                 ['label' => 'My Timetable', 'path' => '/dashboard/timetable.php?tab=personal', 'icon' => 'fas fa-calendar-alt'],
@@ -46,6 +50,7 @@ if (!function_exists('vh_role_page_map')) {
             ],
             'class_advisor' => [
                 ['label' => 'Dashboard', 'path' => '/dashboard/dashboard.php', 'icon' => 'fas fa-th-large'],
+                ['label' => 'VEL AI', 'path' => '/velai.php', 'icon' => 'fas fa-brain'],
                 ['label' => 'Post Attendance', 'path' => '/dashboard/attendance.php', 'icon' => 'fas fa-edit'],
                 ['label' => 'Topic Coverage', 'path' => '/dashboard/topic_coverage.php', 'icon' => 'fas fa-book-open'],
                 ['label' => 'Class Advisor Manager', 'path' => '/dashboard/class_advisor_manager.php', 'icon' => 'fas fa-chalkboard-teacher'],
@@ -57,6 +62,7 @@ if (!function_exists('vh_role_page_map')) {
             ],
             'hod' => [
                 ['label' => 'Dashboard', 'path' => '/dashboard/dashboard.php', 'icon' => 'fas fa-th-large'],
+                ['label' => 'VEL AI', 'path' => '/velai.php', 'icon' => 'fas fa-brain'],
                 ['label' => 'Post Attendance', 'path' => '/dashboard/attendance.php', 'icon' => 'fas fa-edit'],
                 ['label' => 'Topic Coverage', 'path' => '/dashboard/topic_coverage.php', 'icon' => 'fas fa-book-open'],
                 ['label' => 'Seminar Hall Booking', 'path' => '/dashboard/seminar_hall_booking.php', 'icon' => 'fas fa-door-open'],
@@ -69,11 +75,13 @@ if (!function_exists('vh_role_page_map')) {
             ],
             'counsellor' => [
                 ['label' => 'Dashboard', 'path' => '/dashboard/dashboard.php', 'icon' => 'fas fa-th-large'],
+                ['label' => 'VEL AI', 'path' => '/velai.php', 'icon' => 'fas fa-brain'],
                 ['label' => 'Counseling Dashboard', 'path' => '/counselor/counseling_dashboard.php', 'icon' => 'fas fa-hand-holding-heart'],
                 ['label' => 'Profile', 'path' => '/profile.php', 'icon' => 'fas fa-user'],
             ],
             'dean' => [
                 ['label' => 'Dashboard', 'path' => '/dashboard/dashboard.php', 'icon' => 'fas fa-th-large'],
+                ['label' => 'VEL AI', 'path' => '/velai.php', 'icon' => 'fas fa-brain'],
                 ['label' => 'Post Attendance', 'path' => '/dashboard/attendance.php', 'icon' => 'fas fa-edit'],
                 ['label' => 'Attendance Monitor', 'path' => '/attendance_selection.php', 'icon' => 'fas fa-chart-line'],
                 ['label' => 'Topic Coverage', 'path' => '/dashboard/topic_coverage.php', 'icon' => 'fas fa-book-open'],
@@ -86,6 +94,7 @@ if (!function_exists('vh_role_page_map')) {
             ],
             'dean_academics' => [
                 ['label' => 'Dashboard', 'path' => '/dashboard/dashboard.php', 'icon' => 'fas fa-th-large'],
+                ['label' => 'VEL AI', 'path' => '/velai.php', 'icon' => 'fas fa-brain'],
                 ['label' => 'Post Attendance', 'path' => '/dashboard/attendance.php', 'icon' => 'fas fa-edit'],
                 ['label' => 'Attendance Monitor', 'path' => '/attendance_selection.php', 'icon' => 'fas fa-chart-line'],
                 ['label' => 'Topic Coverage', 'path' => '/dashboard/topic_coverage.php', 'icon' => 'fas fa-book-open'],
@@ -98,6 +107,7 @@ if (!function_exists('vh_role_page_map')) {
             ],
             'principal' => [
                 ['label' => 'Dashboard', 'path' => '/dashboard/dashboard.php', 'icon' => 'fas fa-th-large'],
+                ['label' => 'VEL AI', 'path' => '/velai.php', 'icon' => 'fas fa-brain'],
                 ['label' => 'Analytics', 'path' => '/dashboard/analytics.php', 'icon' => 'fas fa-chart-pie'],
                 ['label' => 'Post Attendance', 'path' => '/dashboard/attendance.php', 'icon' => 'fas fa-edit'],
                 ['label' => 'Attendance Monitor', 'path' => '/attendance_selection.php', 'icon' => 'fas fa-chart-line'],
@@ -111,6 +121,7 @@ if (!function_exists('vh_role_page_map')) {
             ],
             'admin' => [
                 ['label' => 'Dashboard', 'path' => '/dashboard/dashboard.php', 'icon' => 'fas fa-th-large'],
+                ['label' => 'VEL AI', 'path' => '/velai.php', 'icon' => 'fas fa-brain'],
                 ['label' => 'Analytics', 'path' => '/dashboard/analytics.php', 'icon' => 'fas fa-chart-pie'],
                 ['label' => 'Post Attendance', 'path' => '/dashboard/attendance.php', 'icon' => 'fas fa-edit'],
                 ['label' => 'Attendance Monitor', 'path' => '/attendance_selection.php', 'icon' => 'fas fa-chart-line'],
@@ -126,6 +137,7 @@ if (!function_exists('vh_role_page_map')) {
             ],
             'ao' => [
                 ['label' => 'Dashboard', 'path' => '/dashboard/dashboard.php', 'icon' => 'fas fa-th-large'],
+                ['label' => 'VEL AI', 'path' => '/velai.php', 'icon' => 'fas fa-brain'],
                 ['label' => 'Seminar Hall Booking', 'path' => '/dashboard/seminar_hall_booking.php', 'icon' => 'fas fa-door-open'],
                 ['label' => 'Seminar Hall DB Fix', 'path' => '/dashboard/fix_seminar_hall_db.php', 'icon' => 'fas fa-database'],
                 ['label' => 'Profile', 'path' => '/profile.php', 'icon' => 'fas fa-user'],

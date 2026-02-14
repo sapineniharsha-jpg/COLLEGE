@@ -34,6 +34,7 @@ if (!function_exists('vh_normalize_role_local')) {
             'counselor' => 'counsellor',
             'class advisor' => 'class_advisor',
             'classadvisor' => 'class_advisor',
+            'advisor' => 'class_advisor',
         ];
         return $map[$role] ?? $role;
     }
@@ -61,17 +62,32 @@ if (!function_exists('vh_resolve_nav_path')) {
             case '/profile.php':
                 $candidates = ['/profile.php', '/dashboard/profile.php'];
                 break;
+            case '/dashboard/profile.php':
+                $candidates = ['/dashboard/profile.php', '/profile.php'];
+                break;
             case '/attendance_selection.php':
                 $candidates = ['/attendance_selection.php', '/dashboard/attendance.php'];
+                break;
+            case '/dashboard/attendance.php':
+                $candidates = ['/dashboard/attendance.php', '/attendance_selection.php', '/attendance.php'];
                 break;
             case '/mentor_hub.php':
                 $candidates = ['/mentor_hub.php', '/dashboard/mentor_hub.php'];
                 break;
+            case '/dashboard/mentor_hub.php':
+                $candidates = ['/dashboard/mentor_hub.php', '/mentor_hub.php'];
+                break;
             case '/class_advisor_manager.php':
                 $candidates = ['/class_advisor_manager.php', '/dashboard/class_advisor_manager.php'];
                 break;
+            case '/dashboard/class_advisor_manager.php':
+                $candidates = ['/dashboard/class_advisor_manager.php', '/class_advisor_manager.php'];
+                break;
             case '/bonafide.php':
                 $candidates = ['/bonafide.php', '/bonafide/bonafide.php'];
+                break;
+            case '/bonafide/bonafide.php':
+                $candidates = ['/bonafide/bonafide.php', '/bonafide.php'];
                 break;
             case '/admin/view_circular.php':
                 $candidates = ['/admin/view_circular.php', '/admin/circulars.php'];
@@ -79,8 +95,20 @@ if (!function_exists('vh_resolve_nav_path')) {
             case '/logout.php':
                 $candidates = ['/logout.php', '/dashboard/logout.php', '/bonafide/logout.php'];
                 break;
+            case '/dashboard/logout.php':
+                $candidates = ['/dashboard/logout.php', '/logout.php', '/bonafide/logout.php'];
+                break;
             case '/forgot_password.php':
                 $candidates = ['/forgot_password.php', '/auth/forgot_password.php'];
+                break;
+            case '/auth/forgot_password.php':
+                $candidates = ['/auth/forgot_password.php', '/forgot_password.php'];
+                break;
+            case '/velai.php':
+                $candidates = ['/velai.php', '/ai/velai.php'];
+                break;
+            case '/ai/velai.php':
+                $candidates = ['/ai/velai.php', '/velai.php'];
                 break;
         }
 
@@ -109,6 +137,7 @@ vh_include_if_exists([
 
 $default_pages = [
     ['label' => 'Dashboard', 'path' => '/dashboard/dashboard.php', 'icon' => 'fas fa-home'],
+    ['label' => 'VEL AI', 'path' => '/velai.php', 'icon' => 'fas fa-brain'],
     ['label' => 'Profile', 'path' => '/profile.php', 'icon' => 'fas fa-user'],
 ];
 $role_pages = function_exists('vh_pages_for_role') ? vh_pages_for_role($user_role) : $default_pages;
@@ -318,10 +347,11 @@ $mobile_pages = array_slice($mobile_pages, 0, 4);
         <div class="footer-col">
             <h4>Resources</h4>
             <ul class="footer-links">
+                <li><a href="<?= vh_e(vh_resolve_nav_path('/velai.php')) ?>"><i class="fas fa-brain"></i> VEL AI Assistant</a></li>
                 <li><a href="/dashboard/analytics.php"><i class="fas fa-chart-pie"></i> Analytics</a></li>
                 <li><a href="/dashboard/topic_coverage.php"><i class="fas fa-book-open"></i> Topic Coverage</a></li>
                 <li><a href="/dashboard/seminar_hall_booking.php"><i class="fas fa-door-open"></i> Seminar Hall Booking</a></li>
-                <li><a href="/bonafide.php"><i class="fas fa-file-signature"></i> Bonafide Request</a></li>
+                <li><a href="<?= vh_e(vh_resolve_nav_path('/bonafide/bonafide.php')) ?>"><i class="fas fa-file-signature"></i> Bonafide Request</a></li>
                 <li><a href="/dashboard/timetable.php"><i class="fas fa-table"></i> Academic Planner</a></li>
             </ul>
         </div>
