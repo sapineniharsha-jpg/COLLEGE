@@ -45,6 +45,37 @@ if (!function_exists('ai_table_exists')) {
         return (bool) ($res && $res->num_rows > 0);
     }
 }
+if (!function_exists('ai_table_has_column')) {
+    function ai_table_has_column(mysqli $db, string $table, string $column): bool
+    {
+        static $cache = [];
+        $table = trim($table);
+        $column = strtolower(trim($column));
+        if ($table === '' || $column === '') {
+            return false;
+        }
+        if (!isset($cache[$table])) {
+            $cache[$table] = [];
+            if (!ai_table_exists($db, $table)) {
+                return false;
+            }
+            $res = $db->query("SHOW COLUMNS FROM {$table}");
+            if ($res) {
+                while ($row = $res->fetch_assoc()) {
+                    $cache[$table][strtolower((string) ($row['Field'] ?? ''))] = true;
+                }
+            }
+        }
+        return !empty($cache[$table][$column]);
+    }
+}
+if (!function_exists('ai_blank')) {
+    function ai_blank($value): bool
+    {
+        $v = trim((string) $value);
+        return $v === '' || strtoupper($v) === 'NULL' || $v === '0';
+    }
+}
 if (!function_exists('ai_now')) {
     function ai_now(): string
     {
@@ -55,7 +86,7 @@ if (!function_exists('ai_safe_user_type')) {
     function ai_safe_user_type(string $userType): string
     {
         $userType = strtolower(trim($userType));
-        if (in_array($userType, ['student', 'faculty', 'employee', 'public', 'admin', 'principal', 'hod', 'dean'], true)) {
+        if (in_array($userType, ['student', 'faculty', 'employee', 'public', 'admin', 'principal', 'hod', 'dean', 'staff', 'class_advisor', 'counsellor', 'ao'], true)) {
             return $userType;
         }
         return 'public';
@@ -276,6 +307,544 @@ if (!function_exists('ai_upsert_metrics')) {
             $upd->bind_param("iiiidsi", $total, $ok, $local, $ai, $avg, $userTypesJson, $id);
             $upd->execute();
         }
+    }
+}
+if (!function_exists('ai_reply_with_audit')) {
+    function ai_reply_with_audit(
+        mysqli $db,
+        string $userId,
+        string $userType,
+        string $question,
+        string $answer,
+        string $source,
+        string $intent,
+        float $confidence,
+        bool $success,
+        float $startTime
+    ): void {
+        ai_insert_log($db, $userId, $question, $answer);
+        ai_insert_interaction($db, $userId, $userType, $question, $answer, $intent, $confidence);
+        ai_upsert_metrics($db, $source, $userType, $success, (microtime(true) - $startTime) * 1000);
+        ai_response($answer, $source, $intent, $confidence);
+    }
+}
+if (!function_exists('ai_is_internal_restricted_intent')) {
+    function ai_is_internal_restricted_intent(string $question): bool
+    {
+        $q = strtolower(trim($question));
+        if ($q === '') {
+            return false;
+        }
+        $patterns = [
+            '/\bbonafide\b/i',
+            '/\bcircular(s)?\b/i',
+            '/\bday\s*order\b/i',
+            '/\btime\s*table\b/i',
+            '/\btimetable\b/i',
+            '/\battendance\b/i',
+            '/\bmark(s)?\b/i',
+            '/\bcgpa\b/i',
+            '/\bprofile\b/i',
+            '/\bmy\s+class(es)?\b/i',
+            '/\btoday\s+class(es)?\b/i',
+        ];
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $q)) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+if (!function_exists('ai_is_bonafide_intent')) {
+    function ai_is_bonafide_intent(string $question): bool
+    {
+        return (bool) preg_match('/\bbonafide\b|\bcertificate\b.*\b(fee|general|internship|project)\b|\bapply\b.*\bcertificate\b/i', $question);
+    }
+}
+if (!function_exists('ai_session_student_tokens')) {
+    function ai_session_student_tokens(): array
+    {
+        $tokens = [];
+        foreach (['student_id', 'ID_NO', 'id_no', 'user_id', 'register_no', 'register_number', 'RegisterNo'] as $key) {
+            $val = trim((string) ($_SESSION[$key] ?? ''));
+            if ($val !== '' && !in_array($val, $tokens, true)) {
+                $tokens[] = $val;
+            }
+        }
+        return $tokens;
+    }
+}
+if (!function_exists('ai_fetch_student_record_by_token')) {
+    function ai_fetch_student_record_by_token(mysqli $db, string $token): ?array
+    {
+        if ($token === '') {
+            return null;
+        }
+
+        if (ai_table_exists($db, 'students_batch_25_26')) {
+            $sql = "SELECT * FROM students_batch_25_26 WHERE id_no = ? LIMIT 1";
+            $types = "s";
+            $params = [$token];
+            if (ai_table_has_column($db, 'students_batch_25_26', 'register_no')) {
+                $sql = "SELECT * FROM students_batch_25_26 WHERE id_no = ? OR register_no = ? LIMIT 1";
+                $types = "ss";
+                $params = [$token, $token];
+            }
+            $stmt = $db->prepare($sql);
+            if ($stmt) {
+                $stmt->bind_param($types, ...$params);
+                $stmt->execute();
+                $res = $stmt->get_result();
+                if ($res && $res->num_rows > 0) {
+                    $row = $res->fetch_assoc();
+                    return [
+                        'source' => 'fresher',
+                        'table_name' => 'students_batch_25_26',
+                        'id_col' => 'id_no',
+                        'student_id' => (string) ($row['id_no'] ?? ''),
+                        'register_no' => (string) ($row['register_no'] ?? ''),
+                        'student_name' => (string) ($row['student_name'] ?? ''),
+                        'department' => (string) ($row['department'] ?? ''),
+                        'batch' => (string) ($row['batch'] ?? ''),
+                        'gender' => (string) ($row['gender'] ?? ''),
+                        'father_name' => (string) ($row['parent_name'] ?? ''),
+                        'mother_name' => (string) ($row['mother_name'] ?? ''),
+                        'degree_type' => (string) ($row['degree_type'] ?? 'UG'),
+                        'section' => (string) ($row['section'] ?? ''),
+                        'community' => (string) ($row['community'] ?? ''),
+                        'raw' => $row,
+                    ];
+                }
+            }
+        }
+
+        if (ai_table_exists($db, 'students_login_master')) {
+            $sql = "SELECT * FROM students_login_master WHERE IDNo = ? LIMIT 1";
+            $types = "s";
+            $params = [$token];
+            if (ai_table_has_column($db, 'students_login_master', 'RegisterNo')) {
+                $sql = "SELECT * FROM students_login_master WHERE IDNo = ? OR RegisterNo = ? LIMIT 1";
+                $types = "ss";
+                $params = [$token, $token];
+            }
+            $stmt = $db->prepare($sql);
+            if ($stmt) {
+                $stmt->bind_param($types, ...$params);
+                $stmt->execute();
+                $res = $stmt->get_result();
+                if ($res && $res->num_rows > 0) {
+                    $row = $res->fetch_assoc();
+                    return [
+                        'source' => 'senior',
+                        'table_name' => 'students_login_master',
+                        'id_col' => 'IDNo',
+                        'student_id' => (string) ($row['IDNo'] ?? ''),
+                        'register_no' => (string) ($row['RegisterNo'] ?? ''),
+                        'student_name' => (string) ($row['Name'] ?? ''),
+                        'department' => (string) ($row['Dept'] ?? ''),
+                        'batch' => (string) ($row['Batch'] ?? ''),
+                        'gender' => (string) ($row['Gender'] ?? ''),
+                        'father_name' => (string) ($row['fathername'] ?? ''),
+                        'mother_name' => (string) ($row['mothername'] ?? ''),
+                        'degree_type' => (string) ($row['DegreeType'] ?? 'UG'),
+                        'section' => (string) ($row['Section'] ?? ''),
+                        'community' => (string) ($row['community'] ?? ''),
+                        'raw' => $row,
+                    ];
+                }
+            }
+        }
+
+        return null;
+    }
+}
+if (!function_exists('ai_fetch_current_student_record')) {
+    function ai_fetch_current_student_record(mysqli $db): ?array
+    {
+        $tokens = ai_session_student_tokens();
+        foreach ($tokens as $token) {
+            $student = ai_fetch_student_record_by_token($db, $token);
+            if ($student) {
+                return $student;
+            }
+        }
+        return null;
+    }
+}
+if (!function_exists('ai_bonafide_required_profile_map')) {
+    function ai_bonafide_required_profile_map(): array
+    {
+        return [
+            'student_name' => ['label' => 'Student Name', 'fresher' => 'student_name', 'senior' => 'Name'],
+            'register_no' => ['label' => 'Register Number', 'fresher' => 'register_no', 'senior' => 'RegisterNo'],
+            'department' => ['label' => 'Department', 'fresher' => 'department', 'senior' => 'Dept'],
+            'batch' => ['label' => 'Batch', 'fresher' => 'batch', 'senior' => 'Batch'],
+            'gender' => ['label' => 'Gender (Male/Female)', 'fresher' => 'gender', 'senior' => 'Gender'],
+            'father_name' => ['label' => "Father Name", 'fresher' => 'parent_name', 'senior' => 'fathername'],
+            'mother_name' => ['label' => "Mother Name", 'fresher' => 'mother_name', 'senior' => 'mothername'],
+            'degree_type' => ['label' => 'Degree Type (UG/PG)', 'fresher' => 'degree_type', 'senior' => 'DegreeType'],
+            'section' => ['label' => 'Section', 'fresher' => 'section', 'senior' => 'Section'],
+            'community' => ['label' => 'Community', 'fresher' => 'community', 'senior' => 'community'],
+        ];
+    }
+}
+if (!function_exists('ai_bonafide_profile_missing_keys')) {
+    function ai_bonafide_profile_missing_keys(array $student): array
+    {
+        $missing = [];
+        $source = (string) ($student['source'] ?? 'senior');
+        $raw = (array) ($student['raw'] ?? []);
+        foreach (ai_bonafide_required_profile_map() as $key => $meta) {
+            $col = (string) ($meta[$source === 'fresher' ? 'fresher' : 'senior'] ?? '');
+            if ($col !== '' && !array_key_exists($col, $raw)) {
+                continue;
+            }
+            if (ai_blank($student[$key] ?? '')) {
+                $missing[] = $key;
+            }
+        }
+        return $missing;
+    }
+}
+if (!function_exists('ai_bonafide_label')) {
+    function ai_bonafide_label(string $fieldKey): string
+    {
+        $map = ai_bonafide_required_profile_map();
+        return (string) ($map[$fieldKey]['label'] ?? $fieldKey);
+    }
+}
+if (!function_exists('ai_bonafide_normalize_gender')) {
+    function ai_bonafide_normalize_gender(string $value): ?string
+    {
+        $v = strtolower(trim($value));
+        if ($v === '') {
+            return null;
+        }
+        if (in_array($v, ['m', 'male', 'boy'], true)) {
+            return 'Male';
+        }
+        if (in_array($v, ['f', 'female', 'girl'], true)) {
+            return 'Female';
+        }
+        return null;
+    }
+}
+if (!function_exists('ai_bonafide_update_profile_field')) {
+    function ai_bonafide_update_profile_field(mysqli $db, array $student, string $fieldKey, string $value): bool
+    {
+        $map = ai_bonafide_required_profile_map();
+        if (!isset($map[$fieldKey])) {
+            return false;
+        }
+        $source = (string) ($student['source'] ?? 'senior');
+        $tableName = (string) ($student['table_name'] ?? '');
+        $idCol = (string) ($student['id_col'] ?? '');
+        $studentId = (string) ($student['student_id'] ?? '');
+        if ($tableName === '' || $idCol === '' || $studentId === '') {
+            return false;
+        }
+
+        $column = (string) ($map[$fieldKey][$source === 'fresher' ? 'fresher' : 'senior'] ?? '');
+        if ($column === '' || !ai_table_has_column($db, $tableName, $column)) {
+            return false;
+        }
+
+        $clean = trim($value);
+        if ($fieldKey === 'gender') {
+            $normalized = ai_bonafide_normalize_gender($clean);
+            if ($normalized === null) {
+                return false;
+            }
+            $clean = $normalized;
+        }
+        if ($fieldKey === 'section') {
+            $clean = strtoupper($clean);
+        }
+        if ($clean === '') {
+            return false;
+        }
+
+        $stmt = $db->prepare("UPDATE {$tableName} SET {$column} = ? WHERE {$idCol} = ? LIMIT 1");
+        if (!$stmt) {
+            return false;
+        }
+        $stmt->bind_param("ss", $clean, $studentId);
+        return (bool) $stmt->execute();
+    }
+}
+if (!function_exists('ai_bonafide_parse_cert_type')) {
+    function ai_bonafide_parse_cert_type(string $text): ?string
+    {
+        $q = strtolower(trim($text));
+        if ($q === '') {
+            return null;
+        }
+        if (strpos($q, 'general') !== false) {
+            return 'General';
+        }
+        if (strpos($q, 'fee structure') !== false || preg_match('/\bstructure\b/', $q)) {
+            return 'Fee Structure';
+        }
+        if (strpos($q, 'fee paid') !== false || preg_match('/\bpaid\b/', $q)) {
+            return 'Fee Paid';
+        }
+        if (strpos($q, 'intern') !== false) {
+            return 'Internship';
+        }
+        if (strpos($q, 'project') !== false) {
+            return 'Project';
+        }
+        return null;
+    }
+}
+if (!function_exists('ai_bonafide_current_academic_year')) {
+    function ai_bonafide_current_academic_year(): string
+    {
+        $year = (int) date('Y');
+        $month = (int) date('n');
+        return ($month >= 6) ? ($year . '-' . ($year + 1)) : (($year - 1) . '-' . $year);
+    }
+}
+if (!function_exists('ai_bonafide_calculate_year_pursuing')) {
+    function ai_bonafide_calculate_year_pursuing(string $batch): string
+    {
+        $start = (int) (explode('-', $batch)[0] ?? date('Y'));
+        $year = (int) date('Y');
+        $month = (int) date('n');
+        $diff = $year - $start + ($month >= 6 ? 1 : 0);
+        if ($diff <= 1) {
+            return 'I';
+        }
+        if ($diff === 2) {
+            return 'II';
+        }
+        if ($diff === 3) {
+            return 'III';
+        }
+        if ($diff === 4) {
+            return 'IV';
+        }
+        return 'Completed';
+    }
+}
+if (!function_exists('ai_bonafide_fetch_class_advisor_id')) {
+    function ai_bonafide_fetch_class_advisor_id(mysqli $db, string $studentId): string
+    {
+        if ($studentId === '' || !ai_table_exists($db, 'mentor_mentee')) {
+            return '';
+        }
+        $stmt = $db->prepare("SELECT Employee_ID_No, ClassAdvisorID FROM mentor_mentee WHERE Student_ID_No = ? LIMIT 1");
+        if (!$stmt) {
+            return '';
+        }
+        $stmt->bind_param("s", $studentId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        if ($res && $res->num_rows > 0) {
+            $row = $res->fetch_assoc();
+            return trim((string) ($row['Employee_ID_No'] ?: ($row['ClassAdvisorID'] ?? '')));
+        }
+        return '';
+    }
+}
+if (!function_exists('ai_bonafide_fetch_fee_details')) {
+    function ai_bonafide_fetch_fee_details(mysqli $db, string $studentId): ?array
+    {
+        if ($studentId === '' || !ai_table_exists($db, 'bonafide_fee_details')) {
+            return null;
+        }
+        $stmt = $db->prepare("SELECT * FROM bonafide_fee_details WHERE id_no = ? LIMIT 1");
+        if (!$stmt) {
+            return null;
+        }
+        $stmt->bind_param("s", $studentId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        if ($res && $res->num_rows > 0) {
+            return $res->fetch_assoc();
+        }
+        return null;
+    }
+}
+if (!function_exists('ai_bonafide_fetch_transport')) {
+    function ai_bonafide_fetch_transport(mysqli $db, string $studentId): ?array
+    {
+        if ($studentId === '' || !ai_table_exists($db, 'transport_allocation')) {
+            return null;
+        }
+        $stmt = $db->prepare("SELECT * FROM transport_allocation WHERE id_no = ? LIMIT 1");
+        if (!$stmt) {
+            return null;
+        }
+        $stmt->bind_param("s", $studentId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        if ($res && $res->num_rows > 0) {
+            return $res->fetch_assoc();
+        }
+        return null;
+    }
+}
+if (!function_exists('ai_bonafide_fetch_hostel')) {
+    function ai_bonafide_fetch_hostel(mysqli $db, string $studentId): ?array
+    {
+        if ($studentId === '') {
+            return null;
+        }
+        $hasGirls = ai_table_exists($db, 'hostel_girls_padmavathy');
+        $hasBoys = ai_table_exists($db, 'hostel_boys_titans');
+        if (!$hasGirls && !$hasBoys) {
+            return null;
+        }
+
+        if ($hasGirls && $hasBoys) {
+            $stmt = $db->prepare(
+                "SELECT 'Padmavathy Girls Hostel' AS hostel_name, room_no FROM hostel_girls_padmavathy WHERE id_no = ?
+                 UNION ALL
+                 SELECT 'Titans Boys Hostel' AS hostel_name, room_no FROM hostel_boys_titans WHERE id_no = ?"
+            );
+            if (!$stmt) {
+                return null;
+            }
+            $stmt->bind_param("ss", $studentId, $studentId);
+        } elseif ($hasGirls) {
+            $stmt = $db->prepare("SELECT 'Padmavathy Girls Hostel' AS hostel_name, room_no FROM hostel_girls_padmavathy WHERE id_no = ?");
+            if (!$stmt) {
+                return null;
+            }
+            $stmt->bind_param("s", $studentId);
+        } else {
+            $stmt = $db->prepare("SELECT 'Titans Boys Hostel' AS hostel_name, room_no FROM hostel_boys_titans WHERE id_no = ?");
+            if (!$stmt) {
+                return null;
+            }
+            $stmt->bind_param("s", $studentId);
+        }
+        $stmt->execute();
+        $res = $stmt->get_result();
+        if ($res && $res->num_rows > 0) {
+            return $res->fetch_assoc();
+        }
+        return null;
+    }
+}
+if (!function_exists('ai_bonafide_generate_request_number')) {
+    function ai_bonafide_generate_request_number(int $requestId): string
+    {
+        return 'REQ' . str_pad((string) $requestId, 6, '0', STR_PAD_LEFT);
+    }
+}
+if (!function_exists('ai_bonafide_create_request')) {
+    function ai_bonafide_create_request(mysqli $db, array $student, string $certType, string $purpose): array
+    {
+        if (!ai_table_exists($db, 'bonafide_requests')) {
+            return ['ok' => false, 'message' => 'Bonafide module is unavailable right now.'];
+        }
+        $studentId = trim((string) ($student['student_id'] ?? ''));
+        if ($studentId === '') {
+            return ['ok' => false, 'message' => 'Student profile is not available for request creation.'];
+        }
+        $advisorId = ai_bonafide_fetch_class_advisor_id($db, $studentId);
+        if ($advisorId === '') {
+            return ['ok' => false, 'message' => 'Class advisor not mapped. Please contact department and then try again in Bonafide module.'];
+        }
+
+        $gender = trim((string) ($student['gender'] ?? 'Male'));
+        $studentPrefix = (stripos($gender, 'f') === 0) ? 'Ms.' : 'Mr.';
+        $fatherName = trim((string) ($student['father_name'] ?? ''));
+        $motherName = trim((string) ($student['mother_name'] ?? ''));
+        $parentName = $fatherName !== '' ? $fatherName : $motherName;
+        $parentPrefix = $fatherName !== '' ? 'Mr.' : 'Mrs.';
+        if ($parentName === '') {
+            $parentName = 'Parent/Guardian';
+            $parentPrefix = 'Mr./Mrs.';
+        }
+
+        $transport = ai_bonafide_fetch_transport($db, $studentId);
+        $hostel = ai_bonafide_fetch_hostel($db, $studentId);
+        $facilityOption = 'None';
+        $busZone = 'None';
+        $busType = 'None';
+        if ($hostel) {
+            $facilityOption = 'Hostel';
+        } elseif ($transport) {
+            $facilityOption = 'Transport';
+            $route = strtoupper(trim((string) ($transport['route_no'] ?? 'None')));
+            if ($route === '' || $route === 'NONE') {
+                $route = 'None';
+            }
+            $busZone = (strpos($route, 'AC') !== false) ? 'AC' : $route;
+            $busType = ($busZone === 'AC') ? 'AC' : (($busZone === 'None') ? 'None' : 'Regular');
+        }
+
+        $columns = [];
+        $values = [];
+        $types = '';
+        $addCol = function (string $col, $val) use (&$columns, &$values, &$types, $db): void {
+            if (ai_table_has_column($db, 'bonafide_requests', $col)) {
+                $columns[] = $col;
+                $values[] = (string) $val;
+                $types .= 's';
+            }
+        };
+
+        $addCol('student_id', $studentId);
+        $addCol('student_name', (string) ($student['student_name'] ?? ''));
+        $addCol('register_number', (string) ($student['register_no'] ?? ''));
+        $addCol('department', (string) ($student['department'] ?? ''));
+        $addCol('batch', (string) ($student['batch'] ?? ''));
+        $addCol('student_prefix', $studentPrefix);
+        $addCol('parent_prefix', $parentPrefix);
+        $addCol('father_name', $parentName);
+        $addCol('gender', $gender);
+        $addCol('year_pursuing', ai_bonafide_calculate_year_pursuing((string) ($student['batch'] ?? '')));
+        $addCol('program', (string) ($student['department'] ?? ''));
+        $addCol('degreetype', (string) ($student['degree_type'] ?? 'UG'));
+        $addCol('duration_course', '4 Years');
+        $addCol('content_academic_year', ai_bonafide_current_academic_year());
+        $addCol('academic_year', '');
+        $addCol('purpose', $purpose);
+        $addCol('bonafide_type', $certType);
+        $addCol('fee_structure', in_array($certType, ['Fee Structure', 'Fee Paid'], true) ? 'Yes' : 'No');
+        $addCol('note_details', 'No');
+        $addCol('facility_option', $facilityOption);
+        $addCol('bus_zone', $busZone);
+        $addCol('bus_type', $busType);
+        $addCol('status', 'Pending');
+        $addCol('advisor_status', 'pending');
+        $addCol('hod_status', 'pending');
+        $addCol('dean_status', 'pending');
+        $addCol('admin_status', 'pending');
+        $addCol('request_date', date('Y-m-d H:i:s'));
+        $addCol('advisor_id', $advisorId);
+
+        if (empty($columns)) {
+            return ['ok' => false, 'message' => 'Unable to map bonafide request columns.'];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($columns), '?'));
+        $sql = "INSERT INTO bonafide_requests (" . implode(', ', $columns) . ") VALUES ({$placeholders})";
+        $stmt = $db->prepare($sql);
+        if (!$stmt) {
+            return ['ok' => false, 'message' => 'Failed to prepare bonafide request statement.'];
+        }
+        $stmt->bind_param($types, ...$values);
+        if (!$stmt->execute()) {
+            return ['ok' => false, 'message' => 'Bonafide request creation failed.'];
+        }
+
+        $requestId = (int) $stmt->insert_id;
+        $requestNumber = ai_bonafide_generate_request_number($requestId);
+        if (ai_table_has_column($db, 'bonafide_requests', 'request_number')) {
+            $upd = $db->prepare("UPDATE bonafide_requests SET request_number = ? WHERE id = ?");
+            if ($upd) {
+                $upd->bind_param("si", $requestNumber, $requestId);
+                $upd->execute();
+            }
+        }
+
+        return ['ok' => true, 'request_id' => $requestId, 'request_number' => $requestNumber];
     }
 }
 if (!function_exists('ai_db_exact_or_keyword')) {
@@ -549,41 +1118,462 @@ if ((int) ($_SESSION['ai_ban_time'] ?? 0) > time()) {
 $normalizedQuestion = ai_apply_synonyms($db, $question);
 $intent = ai_get_pattern_intent($db, $normalizedQuestion);
 
+// Continue active bonafide conversational workflow first.
+$flow = $_SESSION['ai_bonafide_flow'] ?? null;
+if (is_array($flow) && (($flow['type'] ?? '') === 'bonafide')) {
+    if (preg_match('/^(cancel|stop|reset|exit)$/i', trim($normalizedQuestion))) {
+        unset($_SESSION['ai_bonafide_flow']);
+        ai_reply_with_audit(
+            $db,
+            $userId,
+            $userType,
+            $question,
+            'Bonafide workflow cancelled. You can start again anytime by asking "apply bonafide".',
+            'workflow',
+            'bonafide_cancel',
+            1.0,
+            true,
+            $start
+        );
+    }
+
+    if ($userType !== 'student') {
+        unset($_SESSION['ai_bonafide_flow']);
+        ai_reply_with_audit(
+            $db,
+            $userId,
+            $userType,
+            $question,
+            'Bonafide apply workflow is available only for student login.',
+            'workflow',
+            'bonafide_access',
+            1.0,
+            true,
+            $start
+        );
+    }
+
+    $studentFlow = ai_fetch_current_student_record($db);
+    if (!$studentFlow) {
+        unset($_SESSION['ai_bonafide_flow']);
+        ai_reply_with_audit(
+            $db,
+            $userId,
+            $userType,
+            $question,
+            'Unable to load your student profile. Please open Bonafide page once and try again.',
+            'workflow',
+            'bonafide_profile_missing',
+            1.0,
+            false,
+            $start
+        );
+    }
+
+    $step = (string) ($flow['step'] ?? '');
+    if ($step === 'await_profile_field') {
+        $missing = $flow['missing'] ?? [];
+        $index = (int) ($flow['index'] ?? 0);
+        if (!isset($missing[$index])) {
+            $missing = ai_bonafide_profile_missing_keys($studentFlow);
+            $index = 0;
+            $_SESSION['ai_bonafide_flow']['missing'] = $missing;
+            $_SESSION['ai_bonafide_flow']['index'] = 0;
+        }
+        $fieldKey = $missing[$index] ?? '';
+        if ($fieldKey === '') {
+            $_SESSION['ai_bonafide_flow']['step'] = 'await_cert_type';
+            ai_reply_with_audit(
+                $db,
+                $userId,
+                $userType,
+                $question,
+                "Profile is complete now. Please choose certificate type: General, Fee Structure, Fee Paid, Internship, or Project.",
+                'workflow',
+                'bonafide_cert_type',
+                1.0,
+                true,
+                $start
+            );
+        }
+
+        $inputValue = trim($question);
+        if (preg_match('/^(hi|hello|hey)$/i', $inputValue)) {
+            ai_reply_with_audit(
+                $db,
+                $userId,
+                $userType,
+                $question,
+                "Please provide " . ai_bonafide_label($fieldKey) . ". You can type 'cancel' to stop this workflow.",
+                'workflow',
+                'bonafide_profile_prompt',
+                1.0,
+                true,
+                $start
+            );
+        }
+
+        if ($fieldKey === 'gender' && ai_bonafide_normalize_gender($inputValue) === null) {
+            ai_reply_with_audit(
+                $db,
+                $userId,
+                $userType,
+                $question,
+                "Please enter Gender as Male or Female.",
+                'workflow',
+                'bonafide_profile_validation',
+                1.0,
+                true,
+                $start
+            );
+        }
+
+        $updated = ai_bonafide_update_profile_field($db, $studentFlow, $fieldKey, $inputValue);
+        if (!$updated) {
+            ai_reply_with_audit(
+                $db,
+                $userId,
+                $userType,
+                $question,
+                "I could not save " . ai_bonafide_label($fieldKey) . ". Please enter it again.",
+                'workflow',
+                'bonafide_profile_update_failed',
+                1.0,
+                false,
+                $start
+            );
+        }
+
+        $studentFlow = ai_fetch_current_student_record($db);
+        if (!$studentFlow) {
+            unset($_SESSION['ai_bonafide_flow']);
+            ai_reply_with_audit(
+                $db,
+                $userId,
+                $userType,
+                $question,
+                "Profile updated, but I could not re-load your profile. Please restart bonafide apply.",
+                'workflow',
+                'bonafide_profile_reload_failed',
+                1.0,
+                false,
+                $start
+            );
+        }
+        $remaining = ai_bonafide_profile_missing_keys($studentFlow ?: []);
+        if (!empty($remaining)) {
+            $_SESSION['ai_bonafide_flow']['missing'] = $remaining;
+            $_SESSION['ai_bonafide_flow']['index'] = 0;
+            $nextField = $remaining[0];
+            ai_reply_with_audit(
+                $db,
+                $userId,
+                $userType,
+                $question,
+                "Saved. Next, please provide " . ai_bonafide_label($nextField) . ". (" . count($remaining) . " field(s) pending)",
+                'workflow',
+                'bonafide_profile_prompt',
+                1.0,
+                true,
+                $start
+            );
+        }
+
+        $_SESSION['ai_bonafide_flow']['step'] = 'await_cert_type';
+        ai_reply_with_audit(
+            $db,
+            $userId,
+            $userType,
+            $question,
+            "Profile is complete now. Please choose certificate type: General, Fee Structure, Fee Paid, Internship, or Project.",
+            'workflow',
+            'bonafide_cert_type',
+            1.0,
+            true,
+            $start
+        );
+    }
+
+    if ($step === 'await_cert_type') {
+        $certType = ai_bonafide_parse_cert_type($question);
+        if ($certType === null) {
+            ai_reply_with_audit(
+                $db,
+                $userId,
+                $userType,
+                $question,
+                "Please choose one certificate type: General, Fee Structure, Fee Paid, Internship, or Project.",
+                'workflow',
+                'bonafide_cert_type',
+                1.0,
+                true,
+                $start
+            );
+        }
+
+        $fee = ai_bonafide_fetch_fee_details($db, (string) ($studentFlow['student_id'] ?? ''));
+        $scholarship = trim((string) ($fee['scholarship_type'] ?? ''));
+        if (in_array($certType, ['Fee Structure', 'Fee Paid'], true) && in_array($scholarship, ['7.5', '7.5%'], true)) {
+            ai_reply_with_audit(
+                $db,
+                $userId,
+                $userType,
+                $question,
+                "For 7.5 scholarship profile, Fee Structure and Fee Paid certificates are restricted. Please choose General, Internship, or Project.",
+                'workflow',
+                'bonafide_cert_restricted',
+                1.0,
+                true,
+                $start
+            );
+        }
+
+        $_SESSION['ai_bonafide_flow']['cert_type'] = $certType;
+        $_SESSION['ai_bonafide_flow']['step'] = 'await_purpose';
+        $feeLine = '';
+        if ($certType === 'Fee Structure' && $fee) {
+            $feeLine = " Current fee snapshot - Tuition: Rs. " . number_format((float) ($fee['tuition_fees'] ?? 0), 2)
+                . ", Other: Rs. " . number_format((float) ($fee['other_fees'] ?? 0), 2) . ".";
+        }
+        ai_reply_with_audit(
+            $db,
+            $userId,
+            $userType,
+            $question,
+            "Selected certificate type: {$certType}." . $feeLine . " Please enter purpose for this bonafide request.",
+            'workflow',
+            'bonafide_purpose',
+            1.0,
+            true,
+            $start
+        );
+    }
+
+    if ($step === 'await_purpose') {
+        $purpose = trim($question);
+        if (strlen($purpose) < 3) {
+            ai_reply_with_audit(
+                $db,
+                $userId,
+                $userType,
+                $question,
+                "Please provide a clear purpose (minimum 3 characters).",
+                'workflow',
+                'bonafide_purpose_validation',
+                1.0,
+                true,
+                $start
+            );
+        }
+
+        $certType = (string) ($flow['cert_type'] ?? 'General');
+        $result = ai_bonafide_create_request($db, $studentFlow, $certType, $purpose);
+        if (!empty($result['ok'])) {
+            unset($_SESSION['ai_bonafide_flow']);
+            $requestNo = (string) ($result['request_number'] ?? '');
+            $answer = "Bonafide request submitted successfully.";
+            if ($requestNo !== '') {
+                $answer .= " Request ID: {$requestNo}.";
+            }
+            $answer .= " You can track it in /bonafide.php.";
+            ai_reply_with_audit(
+                $db,
+                $userId,
+                $userType,
+                $question,
+                $answer,
+                'workflow',
+                'bonafide_submitted',
+                1.0,
+                true,
+                $start
+            );
+        }
+
+        ai_reply_with_audit(
+            $db,
+            $userId,
+            $userType,
+            $question,
+            (string) ($result['message'] ?? 'Unable to submit bonafide request now.'),
+            'workflow',
+            'bonafide_submit_failed',
+            1.0,
+            false,
+            $start
+        );
+    }
+}
+
+// Start new bonafide apply workflow.
+if (ai_is_bonafide_intent($normalizedQuestion)) {
+    if ($userType === 'public') {
+        ai_reply_with_audit(
+            $db,
+            $userId,
+            $userType,
+            $question,
+            "Bonafide apply is an internal student service. Please login as student to continue.",
+            'policy',
+            'access_policy',
+            1.0,
+            true,
+            $start
+        );
+    }
+    if ($userType !== 'student') {
+        ai_reply_with_audit(
+            $db,
+            $userId,
+            $userType,
+            $question,
+            "Bonafide apply workflow is available for student login. Staff/Admin can use /bonafide.php.",
+            'policy',
+            'access_policy',
+            1.0,
+            true,
+            $start
+        );
+    }
+
+    $student = ai_fetch_current_student_record($db);
+    if (!$student) {
+        ai_reply_with_audit(
+            $db,
+            $userId,
+            $userType,
+            $question,
+            "I could not load your student profile. Please login again and try bonafide request.",
+            'workflow',
+            'bonafide_profile_missing',
+            1.0,
+            false,
+            $start
+        );
+    }
+
+    $missing = ai_bonafide_profile_missing_keys($student);
+    if (!empty($missing)) {
+        $_SESSION['ai_bonafide_flow'] = [
+            'type' => 'bonafide',
+            'step' => 'await_profile_field',
+            'missing' => $missing,
+            'index' => 0,
+            'cert_type' => '',
+        ];
+        $firstField = $missing[0];
+        ai_reply_with_audit(
+            $db,
+            $userId,
+            $userType,
+            $question,
+            "Your profile is pending for bonafide apply. Please provide " . ai_bonafide_label($firstField) . ". (" . count($missing) . " field(s) pending)",
+            'workflow',
+            'bonafide_profile_prompt',
+            1.0,
+            true,
+            $start
+        );
+    }
+
+    $_SESSION['ai_bonafide_flow'] = [
+        'type' => 'bonafide',
+        'step' => 'await_cert_type',
+        'missing' => [],
+        'index' => 0,
+        'cert_type' => '',
+    ];
+    ai_reply_with_audit(
+        $db,
+        $userId,
+        $userType,
+        $question,
+        "Bonafide application started. Please choose certificate type: General, Fee Structure, Fee Paid, Internship, or Project.",
+        'workflow',
+        'bonafide_cert_type',
+        1.0,
+        true,
+        $start
+    );
+}
+
+// Public must not see internal operational details.
+if ($userType === 'public' && ai_is_internal_restricted_intent($normalizedQuestion)) {
+    ai_reply_with_audit(
+        $db,
+        $userId,
+        $userType,
+        $question,
+        "This information is available only for authenticated students/faculty. Please login to continue.",
+        'policy',
+        'access_policy',
+        1.0,
+        true,
+        $start
+    );
+}
+
 // Greeting quick response
 if (preg_match('/^(hi|hello|hey|vanakkam|good morning|good afternoon|good evening)\b/i', $normalizedQuestion)) {
     $name = (string) ($_SESSION['name'] ?? $_SESSION['NAME'] ?? 'there');
     $answer = "Hello {$name}. I am VEL AI. You can ask about academics, attendance, circulars, hostel, scholarships, admissions and institutional services.";
-    ai_insert_log($db, $userId, $question, $answer);
-    ai_insert_interaction($db, $userId, $userType, $question, $answer, 'greeting', 0.99);
-    ai_upsert_metrics($db, 'structured', $userType, true, (microtime(true) - $start) * 1000);
-    ai_response($answer, 'structured', 'greeting', 0.99);
+    ai_reply_with_audit($db, $userId, $userType, $question, $answer, 'structured', 'greeting', 0.99, true, $start);
 }
 
 // Local answer pipeline
-$local = ai_structured_response($db, $normalizedQuestion);
-if (!$local) {
+$local = null;
+if ($userType === 'public') {
+    // Public users get only curated QA by sector_access policy.
     $local = ai_db_exact_or_keyword($db, $normalizedQuestion, $userType);
-}
-if (!$local) {
-    $local = ai_knowledge_base_match($db, $normalizedQuestion, $userType);
+} else {
+    $local = ai_structured_response($db, $normalizedQuestion);
+    if (!$local) {
+        $local = ai_db_exact_or_keyword($db, $normalizedQuestion, $userType);
+    }
+    if (!$local) {
+        $local = ai_knowledge_base_match($db, $normalizedQuestion, $userType);
+    }
 }
 if ($local && !empty($local['answer'])) {
     $answer = (string) $local['answer'];
-    ai_insert_log($db, $userId, $question, $answer);
-    ai_insert_interaction($db, $userId, $userType, $question, $answer, (string) ($local['intent'] ?? $intent), (float) ($local['confidence'] ?? 0.8));
-    ai_upsert_metrics($db, (string) ($local['source'] ?? 'structured'), $userType, true, (microtime(true) - $start) * 1000);
-    ai_response($answer, (string) ($local['source'] ?? 'structured'), (string) ($local['intent'] ?? $intent), (float) ($local['confidence'] ?? 0.8));
+    ai_reply_with_audit(
+        $db,
+        $userId,
+        $userType,
+        $question,
+        $answer,
+        (string) ($local['source'] ?? 'structured'),
+        (string) ($local['intent'] ?? $intent),
+        (float) ($local['confidence'] ?? 0.8),
+        true,
+        $start
+    );
 }
 
-// External AI fallback
+// Public users are restricted to curated internal data only (no external AI fallback).
+if ($userType === 'public') {
+    $publicFallback = "I can provide only public generic information here. Please ask admission, courses, fee, campus facilities, or login for internal services.";
+    ai_insert_unanswered($db, $question, $userType);
+    ai_reply_with_audit($db, $userId, $userType, $question, $publicFallback, 'public_policy', 'public_generic_only', 1.0, true, $start);
+}
+
+// External AI fallback for authenticated internal users.
 $external = ai_external_answer($normalizedQuestion, $userType);
 if ($external && !empty($external['answer'])) {
     $answer = (string) $external['answer'];
     ai_insert_pending_external($db, $question, $answer, $userType, (string) ($external['model'] ?? ''), (float) ($external['confidence'] ?? 0.7));
-    ai_insert_log($db, $userId, $question, $answer);
-    ai_insert_interaction($db, $userId, $userType, $question, $answer, (string) ($external['intent'] ?? 'generative'), (float) ($external['confidence'] ?? 0.7));
-    ai_upsert_metrics($db, 'external_ai', $userType, true, (microtime(true) - $start) * 1000);
-    ai_response($answer, 'external_ai', (string) ($external['intent'] ?? 'generative'), (float) ($external['confidence'] ?? 0.7));
+    ai_reply_with_audit(
+        $db,
+        $userId,
+        $userType,
+        $question,
+        $answer,
+        'external_ai',
+        (string) ($external['intent'] ?? 'generative'),
+        (float) ($external['confidence'] ?? 0.7),
+        true,
+        $start
+    );
 }
 
 // Unanswered fallback + admin review queue
