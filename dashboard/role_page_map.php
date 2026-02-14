@@ -122,6 +122,7 @@ if (!function_exists('vh_role_page_map')) {
             'admin' => [
                 ['label' => 'Dashboard', 'path' => '/dashboard/dashboard.php', 'icon' => 'fas fa-th-large'],
                 ['label' => 'VEL AI', 'path' => '/velai.php', 'icon' => 'fas fa-brain'],
+                ['label' => 'AI Admin', 'path' => '/dashboard/ai_admin.php', 'icon' => 'fas fa-user-shield'],
                 ['label' => 'Analytics', 'path' => '/dashboard/analytics.php', 'icon' => 'fas fa-chart-pie'],
                 ['label' => 'Post Attendance', 'path' => '/dashboard/attendance.php', 'icon' => 'fas fa-edit'],
                 ['label' => 'Attendance Monitor', 'path' => '/attendance_selection.php', 'icon' => 'fas fa-chart-line'],
@@ -133,6 +134,7 @@ if (!function_exists('vh_role_page_map')) {
                 ['label' => 'Seminar Hall DB Fix', 'path' => '/dashboard/fix_seminar_hall_db.php', 'icon' => 'fas fa-database'],
                 ['label' => 'Topic DB Fix', 'path' => '/dashboard/fix_topic_coverage_db.php', 'icon' => 'fas fa-database'],
                 ['label' => 'Attendance DB Fix', 'path' => '/dashboard/fix_attendance_db.php', 'icon' => 'fas fa-database'],
+                ['label' => 'AI DB Fix', 'path' => '/dashboard/fix_ai_governance_db.php', 'icon' => 'fas fa-database'],
                 ['label' => 'Profile', 'path' => '/profile.php', 'icon' => 'fas fa-user'],
             ],
             'ao' => [
