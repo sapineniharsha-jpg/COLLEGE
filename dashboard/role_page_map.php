@@ -23,6 +23,7 @@ if (!function_exists('vh_role_page_map')) {
         return [
             'public' => [
                 ['label' => 'Dashboard', 'path' => '/dashboard/dashboard.php', 'icon' => 'fas fa-th-large'],
+                ['label' => 'Forgot Password', 'path' => '/forgot_password.php', 'icon' => 'fas fa-key'],
             ],
             'student' => [
                 ['label' => 'Dashboard', 'path' => '/dashboard/dashboard.php', 'icon' => 'fas fa-th-large'],
