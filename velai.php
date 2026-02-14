@@ -109,17 +109,35 @@ if (!file_exists($dbPath)) {
 }
 require_once $dbPath;
 
-$db = null;
+$dbConn = null;
 if (isset($mysqli) && $mysqli instanceof mysqli) {
-    $db = $mysqli;
+    $dbConn = $mysqli;
 } elseif (isset($conn) && $conn instanceof mysqli) {
-    $db = $conn;
+    $dbConn = $conn;
+} elseif (isset($con) && $con instanceof mysqli) {
+    $dbConn = $con;
+} elseif (isset($connection) && $connection instanceof mysqli) {
+    $dbConn = $connection;
+} elseif (isset($GLOBALS['db']) && is_object($GLOBALS['db']) && method_exists($GLOBALS['db'], 'getConnection')) {
+    $candidate = $GLOBALS['db']->getConnection();
+    if ($candidate instanceof mysqli) {
+        $dbConn = $candidate;
+    }
 }
-if (!$db || $db->connect_error) {
+if (!$dbConn) {
+    foreach ($GLOBALS as $value) {
+        if ($value instanceof mysqli) {
+            $dbConn = $value;
+            break;
+        }
+    }
+}
+if (!$dbConn || $dbConn->connect_error) {
     http_response_code(500);
     echo 'Database unavailable.';
     exit;
 }
+$db = $dbConn;
 
 $user_id = (string) ($_SESSION['user_id'] ?? '');
 $user_name = (string) ($_SESSION['name'] ?? $_SESSION['NAME'] ?? 'Guest');

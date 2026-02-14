@@ -29,6 +29,20 @@ if (!isset($mysqli) || !($mysqli instanceof mysqli)) {
         }
     }
 }
+if ((!isset($mysqli) || !($mysqli instanceof mysqli)) && isset($GLOBALS['db']) && is_object($GLOBALS['db']) && method_exists($GLOBALS['db'], 'getConnection')) {
+    $candidate = $GLOBALS['db']->getConnection();
+    if ($candidate instanceof mysqli) {
+        $mysqli = $candidate;
+    }
+}
+if (!isset($mysqli) || !($mysqli instanceof mysqli)) {
+    foreach ($GLOBALS as $value) {
+        if ($value instanceof mysqli) {
+            $mysqli = $value;
+            break;
+        }
+    }
+}
 if (!isset($mysqli) || !($mysqli instanceof mysqli) || $mysqli->connect_error) {
     die('Database unavailable');
 }
