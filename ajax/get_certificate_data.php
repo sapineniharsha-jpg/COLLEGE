@@ -2,6 +2,10 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+$security_path = dirname(__DIR__) . '/platform_security.php';
+if (file_exists($security_path)) {
+    require_once $security_path;
+}
 $include_paths = [dirname(dirname(__DIR__)), dirname(__DIR__)];
 function find_include_path(array $paths, $relative) {
     foreach ($paths as $base) {

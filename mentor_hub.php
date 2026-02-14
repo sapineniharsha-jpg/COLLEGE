@@ -5,6 +5,10 @@
 ini_set('display_errors', 0);
 if (session_status() === PHP_SESSION_NONE) session_start();
 require_once '../includes/db.php';
+$security_path = __DIR__ . '/platform_security.php';
+if (file_exists($security_path)) {
+    require_once $security_path;
+}
 
 // Auth Check
 if (!isset($_SESSION['user_id'])) { header('Location: /login.php'); exit(); }
@@ -37,6 +41,7 @@ $my_type = ($role === 'student') ? 'student' : 'employee';
 $is_admin_hod = in_array($role, ['admin', 'principal', 'dean', 'hod'], true);
 $can_view_directory = $is_admin_hod;
 $is_sh_hod = ($role === 'hod' && is_science_humanities_dept($user_dept));
+$csrf_token = function_exists('vh_get_csrf_token') ? vh_get_csrf_token() : '';
 
 // ---------------------------------------------------------
 // AJAX HANDLERS
@@ -150,6 +155,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
         // 5. BULK OPERATIONS
         if ($action == 'assign_bulk') {
             if (!$is_admin_hod) exit;
+            if (function_exists('vh_require_csrf_or_exit')) {
+                vh_require_csrf_or_exit(true);
+            }
             $fid = $mysqli->real_escape_string($_POST['fid']);
             $sids = explode(',', $_POST['sids']);
             foreach ($sids as $sid) {
@@ -172,6 +180,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == '1') {
 
         if ($action == 'remove_bulk') {
             if (!$is_admin_hod) exit;
+            if (function_exists('vh_require_csrf_or_exit')) {
+                vh_require_csrf_or_exit(true);
+            }
             $sids = explode(',', $_POST['sids']);
             $sids_str = "'" . implode("','", array_map([$mysqli, 'real_escape_string'], $sids)) . "'";
             $mysqli->query("DELETE FROM mentor_mentee WHERE Student_ID_No IN ($sids_str)");
@@ -602,6 +613,7 @@ include '../includes/header.php';
     let currentFacDept = '';
     let selectedStudents = new Set();
     const isAdminHOD = <?= $is_admin_hod ? 'true' : 'false' ?>;
+    const CSRF_TOKEN = <?= json_encode($csrf_token) ?>;
 
     function showToast(msg) {
         const t = document.getElementById("toast");
@@ -797,7 +809,7 @@ include '../includes/header.php';
     function confirmAdd() {
         if(selectedStudents.size === 0) return alert("Select at least one student.");
         const ids = Array.from(selectedStudents).join(',');
-        const fd = new FormData(); fd.append('fid', currentFacId); fd.append('sids', ids);
+        const fd = new FormData(); fd.append('fid', currentFacId); fd.append('sids', ids); fd.append('_csrf', CSRF_TOKEN);
 
         fetch('?ajax=1&action=assign_bulk', {method:'POST', body:fd}).then(r=>r.json()).then(res=>{
             addModal.hide();
@@ -813,7 +825,7 @@ include '../includes/header.php';
         if(!confirm(`Remove ${chks.length} mentees from this faculty?`)) return;
 
         const ids = Array.from(chks).map(c=>c.value).join(',');
-        const fd = new FormData(); fd.append('sids', ids);
+        const fd = new FormData(); fd.append('sids', ids); fd.append('_csrf', CSRF_TOKEN);
 
         fetch('?ajax=1&action=remove_bulk', {method:'POST', body:fd}).then(r=>r.json()).then(res=>{
             showToast("Mentees removed successfully.");

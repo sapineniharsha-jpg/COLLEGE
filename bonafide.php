@@ -35,6 +35,11 @@ function find_include_path(array $paths, $relative) {
     return null;
 }
 
+$security_path = __DIR__ . '/platform_security.php';
+if (file_exists($security_path)) {
+    require_once $security_path;
+}
+
 $db_path = find_include_path($include_paths, 'includes/db.php');
 if (!$db_path) {
     http_response_code(500);
@@ -102,6 +107,11 @@ $is_admin = in_array($user_role, ['admin', 'principal'], true);
 $is_dean = ($user_role === 'dean');
 $is_hod = ($user_role === 'hod');
 $is_staff = ($user_role === 'staff');
+$csrf_token = function_exists('vh_get_csrf_token') ? vh_get_csrf_token() : '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && function_exists('vh_require_csrf_or_exit')) {
+    vh_require_csrf_or_exit(false);
+}
 
 function current_academic_year() {
     $year = (int) date('Y');
@@ -1607,6 +1617,7 @@ if ($is_admin || $is_staff || $is_hod || $is_dean) {
                     </div>
 
                     <form method="POST" class="row g-3">
+                        <input type="hidden" name="_csrf" value="<?= vh_e($csrf_token) ?>">
                         <input type="hidden" name="student_id" value="<?= htmlspecialchars($student_id) ?>">
                         <input type="hidden" name="table_source" value="<?= htmlspecialchars($table_source) ?>">
 
@@ -1740,6 +1751,7 @@ if ($is_admin || $is_staff || $is_hod || $is_dean) {
                     </div>
 
                     <form method="POST" id="requestForm">
+                        <input type="hidden" name="_csrf" value="<?= vh_e($csrf_token) ?>">
                         <div class="mb-3">
                             <label class="form-label fw-bold">Type of Certificate *</label>
                             <select name="cert_type" id="cert_type" class="form-select" required onchange="updatePreview();">
@@ -2279,6 +2291,7 @@ if ($is_admin || $is_staff || $is_hod || $is_dean) {
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <form method="POST" id="approveFeeForm">
+                    <input type="hidden" name="_csrf" value="<?= vh_e($csrf_token) ?>">
                     <div class="modal-body">
                         <input type="hidden" name="request_action" id="approve_action_type" value="approve">
                         <input type="hidden" name="request_id" id="approve_request_id">
@@ -2382,6 +2395,7 @@ if ($is_admin || $is_staff || $is_hod || $is_dean) {
     </div>
 
     <form method="POST" id="actionForm" class="d-none">
+        <input type="hidden" name="_csrf" value="<?= vh_e($csrf_token) ?>">
         <input type="hidden" name="request_action" id="action_type">
         <input type="hidden" name="request_id" id="action_request_id">
         <input type="hidden" name="remarks" id="action_remarks">

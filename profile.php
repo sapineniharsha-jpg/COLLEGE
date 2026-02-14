@@ -19,6 +19,11 @@ function find_include_path(array $paths, $relative) {
     return null;
 }
 
+$security_path = __DIR__ . '/platform_security.php';
+if (file_exists($security_path)) {
+    require_once $security_path;
+}
+
 $db_path = find_include_path($include_paths, 'includes/db.php');
 if (!$db_path) {
     http_response_code(500);
@@ -35,6 +40,8 @@ if (empty($my_id)) {
     header("Location: ../login.php");
     exit();
 }
+
+$csrf_token = function_exists('vh_get_csrf_token') ? vh_get_csrf_token() : '';
 
 // 2. ADMIN CHECK
 $is_admin = false;
@@ -96,6 +103,13 @@ if (isset($_GET['ajax_action'])) {
     }
 
     if ($action === 'relieve_user') {
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            echo json_encode(['error' => 'Invalid method']);
+            exit;
+        }
+        if (function_exists('vh_require_csrf_or_exit')) {
+            vh_require_csrf_or_exit(true);
+        }
         $id = $_POST['id'];
         $type = $_POST['type'];
         $status = $_POST['status'];
@@ -121,6 +135,10 @@ if (isset($_GET['ajax_action'])) {
         echo json_encode(['success' => true]);
         exit;
     }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_GET['ajax_action']) && function_exists('vh_require_csrf_or_exit')) {
+    vh_require_csrf_or_exit(false);
 }
 
 // --- 5. DATA FETCHING ---
@@ -558,6 +576,7 @@ if ($header_path) {
         <?php endif; ?>
         <form method="POST" class="mt-3">
             <input type="hidden" name="create_faculty" value="1">
+            <input type="hidden" name="_csrf" value="<?= vh_e($csrf_token) ?>">
             <div class="form-grid">
                 <?php foreach($faculty_columns as $col): ?>
                     <?php
@@ -597,6 +616,7 @@ if ($header_path) {
 
     <form method="POST" enctype="multipart/form-data">
         <input type="hidden" name="save_profile" value="1">
+        <input type="hidden" name="_csrf" value="<?= vh_e($csrf_token) ?>">
 
         <div class="profile-card">
             <div class="cover-photo"></div>
@@ -719,6 +739,7 @@ if ($header_path) {
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+const CSRF_TOKEN = <?= json_encode($csrf_token) ?>;
 const searchInput = document.getElementById('search');
 if (searchInput) {
     searchInput.addEventListener('keyup', function() {
@@ -765,6 +786,7 @@ function confirmRelieve() {
     fd.append('status', document.getElementById('rel_status').value);
     fd.append('reason', document.getElementById('rel_reason').value);
     fd.append('date', document.getElementById('rel_date').value);
+    fd.append('_csrf', CSRF_TOKEN);
 
     fetch('profile.php?ajax_action=relieve_user', {method:'POST', body:fd}).then(r => r.json()).then(res => {
         if (res.success) { alert("User Relieved Successfully."); location.reload(); }
